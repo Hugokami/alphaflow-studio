@@ -201,38 +201,29 @@ async def upload_source_video_endpoint(file: UploadFile = File(...)) -> Dict[str
     }
 
 
-@app.get("/api/video/debug-download")
-async def debug_download(url: str) -> Any:
-    import yt_dlp
-    import traceback
-    errors = {}
-    dest_dir = JOBS_DIR / "debug"
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    out_tmpl = str(dest_dir / "test.%(ext)s")
-    for client in ["android"]:
-        try:
-            ydl_opts = {
-                "outtmpl": out_tmpl,
-                "format": "18/best[height<=480]/best",
-                "no_playlist": True,
-                "extractor_args": {
-                    "youtube": {
-                        "player_client": [client],
-                        "player_skip": ["webpage", "configs"]
-                    }
-                },
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                errors[client] = {
-                    "success": True,
-                    "title": info.get("title"),
-                    "formats": len(info.get("formats", [])),
-                    "url": info.get("url")[:60] if info.get("url") else "no-url"
-                }
-        except Exception as ex:
-            errors[client] = {"error": str(ex), "trace": traceback.format_exc()}
-    return errors
+@app.get("/api/video/video-info")
+async def get_video_info_endpoint(url: str) -> Any:
+    """Fetches video metadata & pre-downloads genuine moving video stream for instant preview."""
+    job_id = f"prev_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+    job_dir = JOBS_DIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        info = await asyncio.to_thread(download_source_video, url, job_dir)
+        duration = float(info.get("duration") or 0.0)
+        routed = key_pool.resolve_gemini_tts_models(video_duration_sec=duration)
+        return {
+            "success": True,
+            "job_id": job_id,
+            "title": info.get("title", "Video"),
+            "duration": duration,
+            "width": int(info.get("width") or 1280),
+            "height": int(info.get("height") or 720),
+            "video_path": str(info.get("video_path")),
+            "preview_url": f"/api/video/local-preview/{job_id}",
+            "routed_tts_model": routed[0],
+        }
+    except Exception as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
 
 
 @app.get("/api/video/local-preview/{job_id}")
@@ -411,6 +402,11 @@ async def step_prepare_video(request: Request) -> Any:
                 src_path = target_src
             meta = await asyncio.to_thread(probe_media_info, src_path)
             media_info = {"video_path": str(src_path), "title": src_path.stem, **meta}
+        elif (job_dir / "source.mp4").exists():
+            # Reusing already prepared source video from preview fetch!
+            src_path = job_dir / "source.mp4"
+            meta = await asyncio.to_thread(probe_media_info, src_path)
+            media_info = {"video_path": str(src_path), "title": params.get("title") or src_path.stem, **meta}
         elif params.get("url"):
             info = await asyncio.to_thread(download_source_video, params["url"], job_dir)
             media_info = {
@@ -449,6 +445,7 @@ async def step_prepare_video(request: Request) -> Any:
             "media_info": media_info,
             "duration": duration_sec,
             "title": media_info["title"],
+            "preview_url": f"/api/video/local-preview/{job_id}",
             "routed_tts_model": routed_models[0],
             "progress": 25,
         }

@@ -102,13 +102,9 @@ def extract_youtube_id(url: str) -> Optional[str]:
 
 def _download_youtube_cloud_fallback(vid: str, dest_dir: Path, ffmpeg_bin: str) -> Dict[str, Any]:
     """
-    Cloud Serverless Datacenter IP Bypass for YouTube.
-    When AWS/Vercel datacenter IPs trigger YouTube bot verification ('Sign in to confirm you're not a bot'),
-    this fallback:
-    1. Fetches official title, author, and thumbnails via YouTube oEmbed & keyframe endpoints.
-    2. Downloads multiple keyframe scenes across the video timeline (0%, 25%, 50%, 75%).
-    3. Fetches full timed transcript via YouTube timedtext API.
-    4. Synthesizes a dynamic multi-scene backdrop video cycling across all scenes with smooth pacing.
+    Cloud Serverless Datacenter IP Handler for YouTube.
+    When serverless cloud datacenter IPs trigger YouTube bot verification ('Sign in to confirm you're not a bot'),
+    we fetch title & metadata via oEmbed and timed transcript via timedtext API, but DO NOT synthesize fake static frames.
     """
     title = f"YouTube Video ({vid})"
     duration = 60.0
@@ -150,7 +146,6 @@ def _download_youtube_cloud_fallback(vid: str, dest_dir: Path, ffmpeg_bin: str) 
         full_text = " ".join(full_text_parts)
         duration = round(segments[-1]["end"], 2)
     else:
-        # Try fetching duration from web page
         try:
             pg_req = urllib.request.Request(f"https://www.youtube.com/watch?v={vid}", headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(pg_req, timeout=5) as pg_resp:
@@ -170,93 +165,26 @@ def _download_youtube_cloud_fallback(vid: str, dest_dir: Path, ffmpeg_bin: str) 
     }
     (dest_dir / "transcript.json").write_text(json.dumps(transcript_payload, ensure_ascii=False), encoding="utf-8")
 
-    # 3. Download multiple timeline keyframe scenes (Hero, 25%, 50%, 75%)
-    scene_candidates = [
-        [f"https://i.ytimg.com/vi/{vid}/maxresdefault.jpg", f"https://i.ytimg.com/vi/{vid}/sddefault.jpg", f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"],
-        [f"https://i.ytimg.com/vi/{vid}/hq1.jpg", f"https://i.ytimg.com/vi/{vid}/1.jpg"],
-        [f"https://i.ytimg.com/vi/{vid}/hq2.jpg", f"https://i.ytimg.com/vi/{vid}/2.jpg"],
-        [f"https://i.ytimg.com/vi/{vid}/hq3.jpg", f"https://i.ytimg.com/vi/{vid}/3.jpg"],
-    ]
-
-    saved_scenes: List[Path] = []
-    for idx, url_list in enumerate(scene_candidates):
-        scene_path = dest_dir / f"scene_{idx}.jpg"
-        for u in url_list:
-            try:
-                req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=6) as r:
-                    content = r.read()
-                    if len(content) > 1000:
-                        scene_path.write_bytes(content)
-                        saved_scenes.append(scene_path)
-                        break
-            except Exception:
-                continue
-
-    # Also keep primary thumbnail.jpg for UI posters
-    if saved_scenes:
-        thumb_path = dest_dir / "thumbnail.jpg"
-        if not thumb_path.exists():
-            shutil.copy2(saved_scenes[0], thumb_path)
-
     out_mp4 = dest_dir / "source.mp4"
-    if saved_scenes:
-        concat_file = dest_dir / "scenes_concat.txt"
-        # Cycle through saved scenes (each scene displayed for 3.5s) to produce a dynamic multi-scene video
-        # Repeat the sequence so the generated video is at least 30-45s of moving scene cuts
-        scene_duration = 3.5
-        repeats = max(3, int(45 / (len(saved_scenes) * scene_duration)))
-        with open(concat_file, "w", encoding="utf-8") as f:
-            for _ in range(repeats):
-                for sc in saved_scenes:
-                    f.write(f"file '{sc.name}'\nduration {scene_duration}\n")
-            f.write(f"file '{saved_scenes[-1].name}'\n")
-
-        total_backdrop_dur = str(int(len(saved_scenes) * repeats * scene_duration))
-        cmd = [
-            ffmpeg_bin,
-            "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            str(concat_file),
-            "-f",
-            "lavfi",
-            "-i",
-            "anullsrc=r=44100:cl=stereo",
-            "-vf",
-            "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,format=yuv420p",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-c:a",
-            "aac",
-            "-shortest",
-            "-t",
-            total_backdrop_dur,
-            str(out_mp4),
-        ]
-        try:
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=25, cwd=str(dest_dir))
-        except Exception as ff_err:
-            print(f"Backdrop video generation notice: {ff_err}")
+    if not out_mp4.exists():
+        raise RuntimeError(
+            "YouTube blocked video stream download on this cloud serverless IP ('Sign in to confirm you’re not a bot'). "
+            "Please upload the video file directly (MP4/WebM/MOV) or run AlphaFlow locally via `python start_studio.py` "
+            "where your residential IP downloads YouTube streams with zero restrictions."
+        )
 
     return {
-        "video_path": out_mp4 if out_mp4.exists() else (dest_dir / "source.mp4"),
+        "video_path": out_mp4,
         "title": title,
         "duration": duration,
         "width": 1280,
         "height": 720,
         "has_transcript": True,
-        "cloud_fallback": True,
     }
 
 
 def download_source_video(url: str, dest_dir: Path) -> Dict[str, Any]:
-    """Downloads video or extracts audio stream from URL using yt-dlp Python library with cloud anti-bot bypass."""
+    """Downloads genuine moving video or extracts stream from URL using yt-dlp with anti-bot bypass."""
     import yt_dlp
 
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -264,7 +192,7 @@ def download_source_video(url: str, dest_dir: Path) -> Dict[str, Any]:
     ffmpeg_bin = get_ffmpeg_exe()
     vid_id = extract_youtube_id(url)
 
-    # Primary: Fast pre-muxed mp4 (format 18 or 360p/480p) via android client (bypasses bot verification)
+    # Primary: Fast pre-muxed mp4 (format 18 or 360p/480p) skipping webpage scrape to bypass Cloudflare/bot challenge
     ydl_opts = {
         "outtmpl": out_tmpl,
         "format": "18/best[height<=480]/best[height<=720]/best",
@@ -274,7 +202,8 @@ def download_source_video(url: str, dest_dir: Path) -> Dict[str, Any]:
         "ffmpeg_location": ffmpeg_bin,
         "extractor_args": {
             "youtube": {
-                "player_client": ["android"]
+                "player_client": ["android"],
+                "player_skip": ["webpage", "configs"]
             }
         },
     }
@@ -307,10 +236,9 @@ def download_source_video(url: str, dest_dir: Path) -> Dict[str, Any]:
                 title = info.get("title") or title
                 duration = float(info.get("duration") or 0.0)
         except Exception as e2:
-            # Fallback 2: Cloud datacenter IP bypass for YouTube (multi-scene timeline montage + timedtext API)
             if vid_id:
                 return _download_youtube_cloud_fallback(vid_id, dest_dir, ffmpeg_bin)
-            raise RuntimeError(f"yt-dlp video error: {str(e)[:160]} | fallback: {str(e2)[:160]}")
+            raise RuntimeError(f"Video download error: {str(e)[:160]} | fallback: {str(e2)[:160]}")
 
     candidates = [p for p in dest_dir.glob("source.*") if p.suffix.lower() not in (".json", ".part", ".ytdl", ".txt")]
     if not candidates:
@@ -556,7 +484,19 @@ def render_final_video(
     w = int(media_info.get("width", 1280))
     h = int(media_info.get("height", 720))
 
-    # 1. Aspect Ratio Sizing & Padding (Zero-crash integer coordinates)
+    # 1. Anti-ContentID Crop / Zoom (use_zoom)
+    if options.get("use_zoom"):
+        v_filters.append("crop=w=in_w*0.88:h=in_h*0.88:(in_w-out_w)/2:(in_h-out_h)/2")
+
+    # 2. Horizontal Flip (flip_video)
+    if options.get("flip_video"):
+        v_filters.append("hflip")
+
+    # 3. Auto Color Enhancement (auto_color)
+    if options.get("auto_color"):
+        v_filters.append("eq=contrast=1.05:brightness=0.02:saturation=1.08")
+
+    # 4. Aspect Ratio Sizing & Padding (Zero-crash integer coordinates)
     ratio = options.get("aspect_ratio", "original")
     if ratio == "9:16":
         v_filters.append("scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black")
@@ -564,13 +504,10 @@ def render_final_video(
         v_filters.append("scale=1080:1440:force_original_aspect_ratio=decrease,pad=1080:1440:(ow-iw)/2:(oh-ih)/2:black")
     elif ratio == "1:1":
         v_filters.append("scale=1080:1080:force_original_aspect_ratio=decrease,pad=1080:1080:(ow-iw)/2:(oh-ih)/2:black")
+    else:
+        v_filters.append("scale=trunc(iw/2)*2:trunc(ih/2)*2")
 
-    if options.get("flip_video", False):
-        v_filters.append("hflip")
-    if options.get("auto_color", False):
-        v_filters.append("eq=contrast=1.05:brightness=0.02:saturation=1.08")
-
-    # 2. Burned-in Subtitles (Hardsub if supported by local FFmpeg build)
+    # 5. Burned-in Subtitles (Hardsub if supported by local FFmpeg build)
     if options.get("subtitle_enabled") and srt_path and srt_path.exists() and options.get("subtitle_type", "encode") == "encode":
         escaped_srt = str(srt_path).replace("\\", "/").replace(":", "\\:")
         font_size = int(options.get("subtitle_font_size", 55)) // 2

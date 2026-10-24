@@ -105,23 +105,25 @@ def _download_youtube_cloud_fallback(vid: str, dest_dir: Path, ffmpeg_bin: str) 
     Cloud Serverless Datacenter IP Bypass for YouTube.
     When AWS/Vercel datacenter IPs trigger YouTube bot verification ('Sign in to confirm you're not a bot'),
     this fallback:
-    1. Fetches official title, author, and thumbnail via YouTube oEmbed (never bot-blocked).
-    2. Fetches full timed transcript via YouTube timedtext API (never bot-blocked).
-    3. Synthesizes a fast 10s backdrop video from the high-res thumbnail with silent audio track.
+    1. Fetches official title, author, and thumbnails via YouTube oEmbed & keyframe endpoints.
+    2. Downloads multiple keyframe scenes across the video timeline (0%, 25%, 50%, 75%).
+    3. Fetches full timed transcript via YouTube timedtext API.
+    4. Synthesizes a dynamic multi-scene backdrop video cycling across all scenes with smooth pacing.
     """
     title = f"YouTube Video ({vid})"
-    thumbnail_url = f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+    duration = 60.0
+
+    # 1. Fetch title and metadata from oEmbed
     try:
         oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={vid}&format=json"
         req = urllib.request.Request(oembed_url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=8) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             title = data.get("title") or title
-            thumbnail_url = data.get("thumbnail_url") or thumbnail_url
     except Exception as oe_err:
         print(f"oEmbed fetch warning: {oe_err}")
 
-    # Fetch transcript
+    # 2. Fetch transcript
     snippets = []
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
@@ -148,8 +150,17 @@ def _download_youtube_cloud_fallback(vid: str, dest_dir: Path, ffmpeg_bin: str) 
         full_text = " ".join(full_text_parts)
         duration = round(segments[-1]["end"], 2)
     else:
+        # Try fetching duration from web page
+        try:
+            pg_req = urllib.request.Request(f"https://www.youtube.com/watch?v={vid}", headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(pg_req, timeout=5) as pg_resp:
+                html = pg_resp.read().decode("utf-8", errors="ignore")
+                m_dur = re.search(r'approxDurationMs\\":\\"(\d+)\\"', html) or re.search(r'"approxDurationMs":"(\d+)"', html)
+                if m_dur:
+                    duration = round(float(m_dur.group(1)) / 1000.0, 1)
+        except Exception:
+            pass
         full_text = f"{title}. Educational video summary and analysis."
-        duration = 60.0
         segments = [{"start": 0.0, "end": 15.0, "text": title}]
 
     transcript_payload = {
@@ -159,42 +170,77 @@ def _download_youtube_cloud_fallback(vid: str, dest_dir: Path, ffmpeg_bin: str) 
     }
     (dest_dir / "transcript.json").write_text(json.dumps(transcript_payload, ensure_ascii=False), encoding="utf-8")
 
-    # Download thumbnail image
-    thumb_path = dest_dir / "thumbnail.jpg"
-    if thumbnail_url:
-        try:
-            req = urllib.request.Request(thumbnail_url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=10) as r, open(thumb_path, "wb") as f:
-                f.write(r.read())
-        except Exception:
-            pass
+    # 3. Download multiple timeline keyframe scenes (Hero, 25%, 50%, 75%)
+    scene_candidates = [
+        [f"https://i.ytimg.com/vi/{vid}/maxresdefault.jpg", f"https://i.ytimg.com/vi/{vid}/sddefault.jpg", f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"],
+        [f"https://i.ytimg.com/vi/{vid}/hq1.jpg", f"https://i.ytimg.com/vi/{vid}/1.jpg"],
+        [f"https://i.ytimg.com/vi/{vid}/hq2.jpg", f"https://i.ytimg.com/vi/{vid}/2.jpg"],
+        [f"https://i.ytimg.com/vi/{vid}/hq3.jpg", f"https://i.ytimg.com/vi/{vid}/3.jpg"],
+    ]
+
+    saved_scenes: List[Path] = []
+    for idx, url_list in enumerate(scene_candidates):
+        scene_path = dest_dir / f"scene_{idx}.jpg"
+        for u in url_list:
+            try:
+                req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=6) as r:
+                    content = r.read()
+                    if len(content) > 1000:
+                        scene_path.write_bytes(content)
+                        saved_scenes.append(scene_path)
+                        break
+            except Exception:
+                continue
+
+    # Also keep primary thumbnail.jpg for UI posters
+    if saved_scenes:
+        thumb_path = dest_dir / "thumbnail.jpg"
+        if not thumb_path.exists():
+            shutil.copy2(saved_scenes[0], thumb_path)
 
     out_mp4 = dest_dir / "source.mp4"
-    if thumb_path.exists():
+    if saved_scenes:
+        concat_file = dest_dir / "scenes_concat.txt"
+        # Cycle through saved scenes (each scene displayed for 3.5s) to produce a dynamic multi-scene video
+        # Repeat the sequence so the generated video is at least 30-45s of moving scene cuts
+        scene_duration = 3.5
+        repeats = max(3, int(45 / (len(saved_scenes) * scene_duration)))
+        with open(concat_file, "w", encoding="utf-8") as f:
+            for _ in range(repeats):
+                for sc in saved_scenes:
+                    f.write(f"file '{sc.name}'\nduration {scene_duration}\n")
+            f.write(f"file '{saved_scenes[-1].name}'\n")
+
+        total_backdrop_dur = str(int(len(saved_scenes) * repeats * scene_duration))
         cmd = [
             ffmpeg_bin,
             "-y",
-            "-loop",
-            "1",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
             "-i",
-            str(thumb_path),
+            str(concat_file),
             "-f",
             "lavfi",
             "-i",
             "anullsrc=r=44100:cl=stereo",
+            "-vf",
+            "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,format=yuv420p",
             "-c:v",
             "libx264",
-            "-t",
-            "10",
-            "-pix_fmt",
-            "yuv420p",
+            "-preset",
+            "ultrafast",
             "-c:a",
             "aac",
             "-shortest",
+            "-t",
+            total_backdrop_dur,
             str(out_mp4),
         ]
         try:
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=25, cwd=str(dest_dir))
         except Exception as ff_err:
             print(f"Backdrop video generation notice: {ff_err}")
 
@@ -218,17 +264,17 @@ def download_source_video(url: str, dest_dir: Path) -> Dict[str, Any]:
     ffmpeg_bin = get_ffmpeg_exe()
     vid_id = extract_youtube_id(url)
 
+    # Primary: Fast pre-muxed mp4 (format 18 or 360p/480p) via android client (bypasses bot verification)
     ydl_opts = {
         "outtmpl": out_tmpl,
-        "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best",
-        "merge_output_format": "mp4",
+        "format": "18/best[height<=480]/best[height<=720]/best",
         "no_playlist": True,
         "quiet": True,
         "no_warnings": True,
         "ffmpeg_location": ffmpeg_bin,
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "ios", "tv", "web_embedded"]
+                "player_client": ["android"]
             }
         },
     }
@@ -241,32 +287,32 @@ def download_source_video(url: str, dest_dir: Path) -> Dict[str, Any]:
             title = info.get("title") or title
             duration = float(info.get("duration") or 0.0)
     except Exception as e:
-        # Fallback 1: audio-only stream download if full 720p muxing failed
+        # Fallback 1: Try alternate player clients (android_testsuite / web)
         try:
-            audio_opts = {
+            fallback_opts = {
                 "outtmpl": str(dest_dir / "source.%(ext)s"),
-                "format": "bestaudio/best",
+                "format": "18/best[height<=480]/bestaudio/best",
                 "no_playlist": True,
                 "quiet": True,
                 "no_warnings": True,
                 "ffmpeg_location": ffmpeg_bin,
                 "extractor_args": {
                     "youtube": {
-                        "player_client": ["android", "ios", "tv", "web_embedded"]
+                        "player_client": ["android_testsuite", "web"]
                     }
                 },
             }
-            with yt_dlp.YoutubeDL(audio_opts) as ydl:
+            with yt_dlp.YoutubeDL(fallback_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 title = info.get("title") or title
                 duration = float(info.get("duration") or 0.0)
         except Exception as e2:
-            # Fallback 2: Cloud datacenter IP bypass for YouTube (oEmbed + timedtext API + thumbnail canvas)
+            # Fallback 2: Cloud datacenter IP bypass for YouTube (multi-scene timeline montage + timedtext API)
             if vid_id:
                 return _download_youtube_cloud_fallback(vid_id, dest_dir, ffmpeg_bin)
-            raise RuntimeError(f"yt-dlp video error: {str(e)[:160]} | audio fallback: {str(e2)[:160]}")
+            raise RuntimeError(f"yt-dlp video error: {str(e)[:160]} | fallback: {str(e2)[:160]}")
 
-    candidates = [p for p in dest_dir.glob("source.*") if p.suffix.lower() not in (".json", ".part", ".ytdl")]
+    candidates = [p for p in dest_dir.glob("source.*") if p.suffix.lower() not in (".json", ".part", ".ytdl", ".txt")]
     if not candidates:
         if vid_id:
             return _download_youtube_cloud_fallback(vid_id, dest_dir, ffmpeg_bin)

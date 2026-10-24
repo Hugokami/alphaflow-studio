@@ -510,51 +510,22 @@ def render_final_video(
     w = int(media_info.get("width", 1280))
     h = int(media_info.get("height", 720))
 
-    # 1. Aspect Ratio Crop
+    # 1. Aspect Ratio Sizing & Padding (Zero-crash integer coordinates)
     ratio = options.get("aspect_ratio", "original")
     if ratio == "9:16":
-        target_w = int(h * 9 / 16)
-        if target_w <= w:
-            v_filters.append(f"crop={target_w}:{h}:(in_w-{target_w})/2:0,scale=1080:1920")
-        else:
-            v_filters.append("scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black")
-        w, h = 1080, 1920
+        v_filters.append("scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black")
     elif ratio == "3:4":
-        target_w = int(h * 3 / 4)
-        if target_w <= w:
-            v_filters.append(f"crop={target_w}:{h}:(in_w-{target_w})/2:0,scale=1080:1440")
-        else:
-            v_filters.append("scale=1080:1440:force_original_aspect_ratio=decrease,pad=1080:1440:(ow-iw)/2:(oh-ih)/2:black")
-        w, h = 1080, 1440
+        v_filters.append("scale=1080:1440:force_original_aspect_ratio=decrease,pad=1080:1440:(ow-iw)/2:(oh-ih)/2:black")
     elif ratio == "1:1":
-        side = min(w, h)
-        v_filters.append(f"crop={side}:{side}:(in_w-{side})/2:(in_h-{side})/2,scale=1080:1080")
-        w, h = 1080, 1080
+        v_filters.append("scale=1080:1080:force_original_aspect_ratio=decrease,pad=1080:1080:(ow-iw)/2:(oh-ih)/2:black")
 
-    # 2. Copyright Bypass (Dynamic Zoom + Subtle Color Shift)
-    if options.get("use_zoom", True):
-        v_filters.append(f"crop=w=in_w*0.90:h=in_h*0.90:x='(in_w-out_w)/2+sin(t*0.4)*12':y='(in_h-out_h)/2',scale={w}:{h}")
     if options.get("flip_video", False):
         v_filters.append("hflip")
     if options.get("auto_color", False):
-        v_filters.append("eq=contrast=1.05:brightness=0.015:saturation=1.08")
+        v_filters.append("eq=contrast=1.05:brightness=0.02:saturation=1.08")
 
-    # 3. Blur Boxes (Hardsub Removal)
-    blur_boxes = options.get("blur_boxes") or []
-    if options.get("blur_enabled") and isinstance(blur_boxes, list):
-        for box in blur_boxes[:3]:
-            try:
-                bx = max(1, int(float(box.get("x", 10)) / 100.0 * w))
-                by = max(1, int(float(box.get("y", 80)) / 100.0 * h))
-                bw = max(16, min(w - bx - 2, int(float(box.get("w", 80)) / 100.0 * w)))
-                bh = max(16, min(h - by - 2, int(float(box.get("h", 12)) / 100.0 * h)))
-                v_filters.append(f"delogo=x={bx}:y={by}:w={bw}:h={bh}:show=0")
-            except Exception:
-                pass
-
-    # 4. Burned-in Subtitles (Hardsub)
+    # 2. Burned-in Subtitles (Hardsub if supported by local FFmpeg build)
     if options.get("subtitle_enabled") and srt_path and srt_path.exists() and options.get("subtitle_type", "encode") == "encode":
-        # FFmpeg Windows path escaping for subtitles filter
         escaped_srt = str(srt_path).replace("\\", "/").replace(":", "\\:")
         font_size = int(options.get("subtitle_font_size", 55)) // 2
         v_filters.append(
@@ -563,95 +534,137 @@ def render_final_video(
 
     vf_chain = ",".join(v_filters) if v_filters else "null"
 
-    # Build Audio Mix
     ffmpeg_bin = get_ffmpeg_exe()
     if voice_audio and voice_audio.exists():
-        cmd = [ffmpeg_bin, "-y", "-stream_loop", "-1", "-i", str(source_video), "-i", str(voice_audio)]
-        sfx_bg = options.get("sfx_only", True)
-        bg_vol = "0.14" if sfx_bg else "0.0"
-        af_complex = (
-            f"[0:a]volume={bg_vol},lowpass=f=3200[bg];"
-            f"[1:a]volume=1.0[vo];"
-            f"[vo][bg]amix=inputs=2:duration=first:dropout_transition=2,dynaudnorm=f=150:g=13[aout]"
-        )
-        cmd.extend(
-            [
-                "-filter_complex",
-                f"[0:v]{vf_chain}[vout];{af_complex}",
-                "-map",
-                "[vout]",
-                "-map",
-                "[aout]",
-                "-shortest",
-            ]
-        )
-    else:
-        cmd = [ffmpeg_bin, "-y", "-i", str(source_video), "-vf", vf_chain, "-map", "0:v:0", "-map", "0:a?"]
-
-    cmd.extend(
-        [
+        cmd = [
+            ffmpeg_bin,
+            "-y",
+            "-stream_loop",
+            "-1",
+            "-i",
+            str(source_video),
+            "-i",
+            str(voice_audio),
+            "-vf",
+            vf_chain,
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
             "-c:v",
             "libx264",
             "-preset",
             "veryfast",
             "-crf",
-            "21",
+            "22",
             "-c:a",
             "aac",
             "-b:a",
-            "192k",
+            "128k",
+            "-shortest",
             "-movflags",
             "+faststart",
             str(out_video),
         ]
-    )
+    else:
+        cmd = [
+            ffmpeg_bin,
+            "-y",
+            "-i",
+            str(source_video),
+            "-vf",
+            vf_chain,
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a?",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "22",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            "-movflags",
+            "+faststart",
+            str(out_video),
+        ]
+
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     except subprocess.CalledProcessError as err:
-        # If hardsub subtitles filter failed (e.g. libass missing in static ffmpeg build), retry without hardsub filter
-        if "subtitles=" in vf_chain:
-            fallback_v_filters = [f for f in v_filters if not f.startswith("subtitles=")]
-            fallback_vf = ",".join(fallback_v_filters) if fallback_v_filters else "null"
-            if voice_audio and voice_audio.exists():
-                fallback_cmd = [
-                    ffmpeg_bin,
-                    "-y",
-                    "-stream_loop",
-                    "-1",
-                    "-i",
-                    str(source_video),
-                    "-i",
-                    str(voice_audio),
-                    "-filter_complex",
-                    f"[0:v]{fallback_vf}[vout];{af_complex}",
-                    "-map",
-                    "[vout]",
-                    "-map",
-                    "[aout]",
-                    "-shortest",
-                ]
-            else:
-                fallback_cmd = [ffmpeg_bin, "-y", "-i", str(source_video), "-vf", fallback_vf, "-map", "0:v:0", "-map", "0:a?"]
-            fallback_cmd.extend(
-                [
-                    "-c:v",
-                    "libx264",
-                    "-preset",
-                    "veryfast",
-                    "-crf",
-                    "21",
-                    "-c:a",
-                    "aac",
-                    "-b:a",
-                    "192k",
-                    "-movflags",
-                    "+faststart",
-                    str(out_video),
-                ]
-            )
-            subprocess.run(fallback_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        stderr_msg = err.stderr.decode("utf-8", errors="ignore") if err.stderr else ""
+        print("FFmpeg primary render notice:", stderr_msg[:200])
+        # Fallback without subtitles filter (e.g. if static ffmpeg build lacks libass)
+        clean_v_filters = [f for f in v_filters if not f.startswith("subtitles=")]
+        clean_vf = ",".join(clean_v_filters) if clean_v_filters else "null"
+        if voice_audio and voice_audio.exists():
+            fallback_cmd = [
+                ffmpeg_bin,
+                "-y",
+                "-stream_loop",
+                "-1",
+                "-i",
+                str(source_video),
+                "-i",
+                str(voice_audio),
+                "-vf",
+                clean_vf,
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "22",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-shortest",
+                "-movflags",
+                "+faststart",
+                str(out_video),
+            ]
         else:
-            raise err
+            fallback_cmd = [
+                ffmpeg_bin,
+                "-y",
+                "-i",
+                str(source_video),
+                "-vf",
+                clean_vf,
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "22",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-movflags",
+                "+faststart",
+                str(out_video),
+            ]
+        try:
+            subprocess.run(fallback_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as fallback_err:
+            fb_stderr = fallback_err.stderr.decode("utf-8", errors="ignore") if fallback_err.stderr else ""
+            print("FFmpeg fallback render notice:", fb_stderr[:200])
+            raise RuntimeError(f"FFmpeg render failure: {fb_stderr[-200:]}")
+
     return out_video
 
 

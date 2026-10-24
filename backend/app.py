@@ -201,6 +201,34 @@ async def upload_source_video_endpoint(file: UploadFile = File(...)) -> Dict[str
     }
 
 
+@app.get("/api/video/debug-download")
+async def debug_download(url: str) -> Any:
+    import yt_dlp
+    import traceback
+    errors = {}
+    dest_dir = JOBS_DIR / "debug"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    out_tmpl = str(dest_dir / "test.%(ext)s")
+    for client in ["android", "tv_embedded", "web"]:
+        try:
+            ydl_opts = {
+                "outtmpl": out_tmpl,
+                "format": "18/best[height<=480]/best",
+                "no_playlist": True,
+                "extractor_args": {"youtube": {"player_client": [client]}},
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                errors[client] = {
+                    "success": True,
+                    "title": info.get("title"),
+                    "formats": len(info.get("formats", [])),
+                }
+        except Exception as ex:
+            errors[client] = {"error": str(ex), "trace": traceback.format_exc()}
+    return errors
+
+
 @app.get("/api/video/local-preview/{job_id}")
 async def stream_local_preview(job_id: str) -> FileResponse:
     job_dir = JOBS_DIR / job_id

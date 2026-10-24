@@ -565,66 +565,72 @@ async def step_synthesize_tts(request: Request) -> Dict[str, Any]:
 
 @app.post("/api/video/step/render")
 async def step_render_video(request: Request) -> Dict[str, Any]:
-    params = await request.json()
-    job_id = params.get("job_id")
-    if not job_id or job_id not in JOBS:
-        raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        params = await request.json()
+        job_id = params.get("job_id")
+        if not job_id or job_id not in JOBS:
+            raise HTTPException(status_code=404, detail="Job not found")
 
-    job_dir = JOBS_DIR / job_id
-    media_info = JOBS[job_id].get("media_info") or {}
-    vids = [p for p in job_dir.glob("source.*") if p.suffix.lower() not in (".json", ".part", ".mp3", ".wav", ".ytdl")]
-    source_video = vids[0] if vids else (job_dir / "source.mp4")
+        job_dir = JOBS_DIR / job_id
+        media_info = JOBS[job_id].get("media_info") or {}
+        vids = [p for p in job_dir.glob("source.*") if p.suffix.lower() not in (".json", ".part", ".mp3", ".wav", ".ytdl")]
+        source_video = vids[0] if vids else (job_dir / "source.mp4")
 
-    audio_path = job_dir / "final_voice.wav"
-    if not audio_path.exists():
-        candidates = list(job_dir.glob("*.wav")) + list(job_dir.glob("*.mp3"))
-        audio_path = candidates[0] if candidates else None
+        audio_path = job_dir / "final_voice.wav"
+        if not audio_path.exists():
+            candidates = list(job_dir.glob("*.wav")) + list(job_dir.glob("*.mp3"))
+            audio_path = candidates[0] if candidates else None
 
-    srt_path = job_dir / "captions.srt"
-    out_video = job_dir / "final_output.mp4"
+        srt_path = job_dir / "captions.srt"
+        out_video = job_dir / "final_output.mp4"
 
-    render_options = {**JOBS[job_id].get("params", {}), **params}
+        render_options = {**JOBS[job_id].get("params", {}), **params}
 
-    await asyncio.to_thread(
-        render_final_video,
-        source_video,
-        audio_path,
-        srt_path,
-        out_video,
-        render_options,
-        media_info,
-    )
-
-    tg_result = {"pushed": False}
-    if render_options.get("push_telegram", True):
-        script = JOBS[job_id].get("script") or {}
-        duration_sec = float(JOBS[job_id].get("duration") or 0.0)
-        tts_model = JOBS[job_id].get("tts_model_used", "AlphaFlow TTS")
-        caption = (
-            f"🎬 {script.get('viral_title', 'AlphaFlow Render')}\n"
-            f"🎙 Voice: {render_options.get('voice')} ({tts_model})\n"
-            f"⏱ Duration: {duration_sec:.1f}s"
+        await asyncio.to_thread(
+            render_final_video,
+            source_video,
+            audio_path,
+            srt_path,
+            out_video,
+            render_options,
+            media_info,
         )
-        tg_result = await asyncio.to_thread(push_to_telegram_storage, out_video, caption)
 
-    JOBS[job_id]["status"] = "completed"
-    JOBS[job_id]["step"] = 5
-    JOBS[job_id]["progress"] = 100
-    JOBS[job_id]["log"] = "Completed! Video rendered & archived."
-    JOBS[job_id]["download_url"] = f"/api/video/local-preview/{job_id}"
-    JOBS[job_id]["srt_url"] = f"/api/video/subtitle/{job_id}/download"
-    JOBS[job_id]["telegram"] = tg_result
-    _save_jobs()
+        tg_result = {"pushed": False}
+        if render_options.get("push_telegram", True):
+            script = JOBS[job_id].get("script") or {}
+            duration_sec = float(JOBS[job_id].get("duration") or 0.0)
+            tts_model = JOBS[job_id].get("tts_model_used", "AlphaFlow TTS")
+            caption = (
+                f"🎬 {script.get('viral_title', 'AlphaFlow Render')}\n"
+                f"🎙 Voice: {render_options.get('voice')} ({tts_model})\n"
+                f"⏱ Duration: {duration_sec:.1f}s"
+            )
+            tg_result = await asyncio.to_thread(push_to_telegram_storage, out_video, caption)
 
-    return {
-        "success": True,
-        "job_id": job_id,
-        "status": "completed",
-        "download_url": f"/api/video/local-preview/{job_id}",
-        "srt_url": f"/api/video/subtitle/{job_id}/download",
-        "telegram": tg_result,
-        "progress": 100,
-    }
+        JOBS[job_id]["status"] = "completed"
+        JOBS[job_id]["step"] = 5
+        JOBS[job_id]["progress"] = 100
+        JOBS[job_id]["log"] = "Completed! Video rendered & archived."
+        JOBS[job_id]["download_url"] = f"/api/video/local-preview/{job_id}"
+        JOBS[job_id]["srt_url"] = f"/api/video/subtitle/{job_id}/download"
+        JOBS[job_id]["telegram"] = tg_result
+        _save_jobs()
+
+        return {
+            "success": True,
+            "job_id": job_id,
+            "status": "completed",
+            "download_url": f"/api/video/local-preview/{job_id}",
+            "srt_url": f"/api/video/subtitle/{job_id}/download",
+            "telegram": tg_result,
+            "progress": 100,
+        }
+    except Exception as exc:
+        import traceback
+        trace = traceback.format_exc()
+        print("ERROR IN STEP_RENDER_VIDEO:", trace)
+        return JSONResponse(status_code=500, content={"error": str(exc), "traceback": trace})
 
 
 @app.get("/api/video/voice-audio/{job_id}")

@@ -60,7 +60,13 @@ def _save_jobs() -> None:
 
 
 @app.get("/", response_class=HTMLResponse)
-async def serve_studio_ui() -> HTMLResponse:
+async def serve_studio_ui(request: Request) -> Any:
+    if request.query_params.get("debug") == "1":
+        return JSONResponse({
+            "url": str(request.url),
+            "scope_path": request.scope.get("path"),
+            "headers": dict(request.headers),
+        })
     index_file = FRONTEND_DIR / "index.html"
     if not index_file.exists():
         return HTMLResponse("<h1>AlphaFlow UI initializing...</h1>")

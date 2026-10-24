@@ -856,7 +856,7 @@
         });
         if (!prepRes.ok) {
           const err = await prepRes.json().catch(() => ({ detail: prepRes.statusText }));
-          throw new Error(err.detail || 'Failed to prepare video');
+          throw new Error(err.error || err.detail || 'Failed to prepare video');
         }
         const prepData = await prepRes.json();
         const jobId = prepData.job_id;
@@ -869,11 +869,11 @@
         const transRes = await fetch('/api/video/step/transcribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ job_id: jobId })
+          body: JSON.stringify({ job_id: jobId, url: payload.url, media_info: prepData.media_info })
         });
         if (!transRes.ok) {
           const err = await transRes.json().catch(() => ({ detail: transRes.statusText }));
-          throw new Error(err.detail || 'Transcription failed');
+          throw new Error(err.error || err.detail || 'Transcription failed');
         }
         const transData = await transRes.json();
         updateUI(50, `Audio transcribed (${transData.transcript_data?.segments?.length || 0} segments)`);
@@ -896,7 +896,7 @@
         });
         if (!scriptRes.ok) {
           const err = await scriptRes.json().catch(() => ({ detail: scriptRes.statusText }));
-          throw new Error(err.detail || 'Script generation failed');
+          throw new Error(err.error || err.detail || 'Script generation failed');
         }
         const scriptData = await scriptRes.json();
         if (scriptData.script?.full_narration) {
@@ -906,6 +906,7 @@
 
         // STEP 4: SYNTHESIZE SPEECH VIA SMART GEMINI / EDGE TTS (75% -> 90%)
         let ttsModelUsed = "subtitle_only";
+        let voiceAudioBase64 = "";
         if (payload.processing_mode !== 'subtitle') {
           updateUI(80, `Step 4/5: Synthesizing voice (${payload.voice}) via ${prepData.routed_tts_model}...`);
           const ttsRes = await fetch('/api/video/step/tts', {
@@ -923,10 +924,11 @@
           });
           if (!ttsRes.ok) {
             const err = await ttsRes.json().catch(() => ({ detail: ttsRes.statusText }));
-            throw new Error(err.detail || 'Voice synthesis failed');
+            throw new Error(err.error || err.detail || 'Voice synthesis failed');
           }
           const ttsData = await ttsRes.json();
           ttsModelUsed = ttsData.model_used;
+          voiceAudioBase64 = ttsData.voice_audio_base64 || "";
           updateUI(90, `Voice synthesized via ${ttsModelUsed}`);
           document.getElementById('durationRouteIndicator').textContent =
             `Duration: ${prepData.duration.toFixed(1)}s · Active TTS: ${ttsModelUsed}`;
@@ -939,12 +941,18 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             job_id: jobId,
+            voice_audio_base64: voiceAudioBase64,
+            script: scriptData.script,
+            duration: prepData.duration,
+            title: prepData.title,
+            media_info: prepData.media_info,
+            url: payload.url,
             ...payload
           })
         });
         if (!renderRes.ok) {
           const err = await renderRes.json().catch(() => ({ detail: renderRes.statusText }));
-          throw new Error(err.detail || 'Rendering failed');
+          throw new Error(err.error || err.detail || 'Rendering failed');
         }
         const renderData = await renderRes.json();
         updateUI(100, 'Completed! Video rendered & archived.');

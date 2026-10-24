@@ -361,61 +361,67 @@ async def _run_job_pipeline(job_id: str, params: Dict[str, Any]) -> None:
 # ============================================================================
 
 @app.post("/api/video/step/prepare")
-async def step_prepare_video(request: Request) -> Dict[str, Any]:
-    params = await request.json()
-    job_id = params.get("job_id") or f"job_{int(time.time())}_{uuid.uuid4().hex[:6]}"
-    job_dir = JOBS_DIR / job_id
-    job_dir.mkdir(parents=True, exist_ok=True)
+async def step_prepare_video(request: Request) -> Any:
+    try:
+        params = await request.json()
+        job_id = params.get("job_id") or f"job_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+        job_dir = JOBS_DIR / job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
 
-    if params.get("video_file_path") and Path(params["video_file_path"]).exists():
-        src_path = Path(params["video_file_path"])
-        if src_path.parent != job_dir:
-            target_src = job_dir / f"source{src_path.suffix}"
-            shutil.copy2(src_path, target_src)
-            src_path = target_src
-        meta = await asyncio.to_thread(probe_media_info, src_path)
-        media_info = {"video_path": str(src_path), "title": src_path.stem, **meta}
-    elif params.get("url"):
-        info = await asyncio.to_thread(download_source_video, params["url"], job_dir)
-        media_info = {
-            "video_path": str(info["video_path"]),
-            "title": info.get("title", "Video"),
-            "duration": float(info.get("duration") or 0.0),
-            "width": int(info.get("width") or 1280),
-            "height": int(info.get("height") or 720),
+        if params.get("video_file_path") and Path(params["video_file_path"]).exists():
+            src_path = Path(params["video_file_path"])
+            if src_path.parent != job_dir:
+                target_src = job_dir / f"source{src_path.suffix}"
+                shutil.copy2(src_path, target_src)
+                src_path = target_src
+            meta = await asyncio.to_thread(probe_media_info, src_path)
+            media_info = {"video_path": str(src_path), "title": src_path.stem, **meta}
+        elif params.get("url"):
+            info = await asyncio.to_thread(download_source_video, params["url"], job_dir)
+            media_info = {
+                "video_path": str(info["video_path"]),
+                "title": info.get("title", "Video"),
+                "duration": float(info.get("duration") or 0.0),
+                "width": int(info.get("width") or 1280),
+                "height": int(info.get("height") or 720),
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Neither video URL nor uploaded video file was provided.")
+
+        duration_sec = float(media_info.get("duration") or 0.0)
+        routed_models = key_pool.resolve_gemini_tts_models(
+            video_duration_sec=duration_sec,
+            requested_model=params.get("gemini_tts_model"),
+        )
+
+        JOBS[job_id] = {
+            "job_id": job_id,
+            "status": "processing",
+            "step": 1,
+            "progress": 25,
+            "log": f"Source ready ({duration_sec:.1f}s) · Smart Route: {routed_models[0]}",
+            "duration": duration_sec,
+            "routed_tts_model": routed_models[0],
+            "media_info": media_info,
+            "created_at": int(time.time()),
+            "params": params,
         }
-    else:
-        raise HTTPException(status_code=400, detail="Neither video URL nor uploaded video file was provided.")
+        _save_jobs()
 
-    duration_sec = float(media_info.get("duration") or 0.0)
-    routed_models = key_pool.resolve_gemini_tts_models(
-        video_duration_sec=duration_sec,
-        requested_model=params.get("gemini_tts_model"),
-    )
-
-    JOBS[job_id] = {
-        "job_id": job_id,
-        "status": "processing",
-        "step": 1,
-        "progress": 25,
-        "log": f"Source ready ({duration_sec:.1f}s) · Smart Route: {routed_models[0]}",
-        "duration": duration_sec,
-        "routed_tts_model": routed_models[0],
-        "media_info": media_info,
-        "created_at": int(time.time()),
-        "params": params,
-    }
-    _save_jobs()
-
-    return {
-        "success": True,
-        "job_id": job_id,
-        "media_info": media_info,
-        "duration": duration_sec,
-        "title": media_info["title"],
-        "routed_tts_model": routed_models[0],
-        "progress": 25,
-    }
+        return {
+            "success": True,
+            "job_id": job_id,
+            "media_info": media_info,
+            "duration": duration_sec,
+            "title": media_info["title"],
+            "routed_tts_model": routed_models[0],
+            "progress": 25,
+        }
+    except Exception as exc:
+        import traceback
+        trace = traceback.format_exc()
+        print("ERROR IN STEP_PREPARE_VIDEO:", trace)
+        return JSONResponse(status_code=500, content={"error": str(exc), "traceback": trace})
 
 
 @app.post("/api/video/step/transcribe")

@@ -192,18 +192,17 @@ def download_source_video(url: str, dest_dir: Path) -> Dict[str, Any]:
     ffmpeg_bin = get_ffmpeg_exe()
     vid_id = extract_youtube_id(url)
 
-    # Primary: Fast pre-muxed mp4 (format 18 or 360p/480p) skipping webpage scrape to bypass Cloudflare/bot challenge
+    # Primary: Fast pre-muxed mp4 (format 18 or 360p/720p) with mweb/android client bypass
     ydl_opts = {
         "outtmpl": out_tmpl,
-        "format": "18/best[height<=480]/best[height<=720]/best",
+        "format": "18/best[ext=mp4][height<=720]/best[height<=720]/best",
         "no_playlist": True,
         "quiet": True,
         "no_warnings": True,
         "ffmpeg_location": ffmpeg_bin,
         "extractor_args": {
             "youtube": {
-                "player_client": ["android"],
-                "player_skip": ["webpage", "configs"]
+                "player_client": ["mweb", "android"]
             }
         },
     }
@@ -216,18 +215,18 @@ def download_source_video(url: str, dest_dir: Path) -> Dict[str, Any]:
             title = info.get("title") or title
             duration = float(info.get("duration") or 0.0)
     except Exception as e:
-        # Fallback 1: Try alternate player clients (android_testsuite / web)
+        # Fallback 1: Try alternate player clients (android, ios, web)
         try:
             fallback_opts = {
                 "outtmpl": str(dest_dir / "source.%(ext)s"),
-                "format": "18/best[height<=480]/bestaudio/best",
+                "format": "18/best[height<=720]/bestaudio/best",
                 "no_playlist": True,
                 "quiet": True,
                 "no_warnings": True,
                 "ffmpeg_location": ffmpeg_bin,
                 "extractor_args": {
                     "youtube": {
-                        "player_client": ["android_testsuite", "web"]
+                        "player_client": ["android", "ios", "web"]
                     }
                 },
             }

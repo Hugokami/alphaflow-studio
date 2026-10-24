@@ -789,12 +789,69 @@
     }
 
     let CURRENT_PREPARED_JOB = null;
+    let SELECTED_FILE = null;
+    let ACTIVE_UPLOAD_PROMISE = null;
+
+    async function uploadFileInChunks(file) {
+      const lbl = document.getElementById('uploadStatusLabel');
+      lbl.textContent = 'Preparing upload...';
+
+      const CHUNK_SIZE = 3.5 * 1024 * 1024; // 3.5MB slices (safely within Vercel's 4.5MB limit)
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      const uploadId = 'up_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+
+      let lastData = null;
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(file.size, start + CHUNK_SIZE);
+        const chunkBlob = file.slice(start, end);
+
+        const pct = Math.round(((i + 1) / totalChunks) * 100);
+        lbl.textContent = `Uploading ${pct}% (${i + 1}/${totalChunks})...`;
+        document.getElementById('jobStatusText').textContent = `SYS > Uploading video: ${pct}%...`;
+
+        const fd = new FormData();
+        fd.append('upload_id', uploadId);
+        fd.append('chunk_index', i.toString());
+        fd.append('total_chunks', totalChunks.toString());
+        fd.append('filename', file.name);
+        fd.append('chunk', chunkBlob, file.name);
+
+        let res;
+        let retries = 0;
+        while (retries < 3) {
+          try {
+            res = await fetch('/api/video/upload-chunk', { method: 'POST', body: fd });
+            if (res.ok) break;
+            throw new Error(`HTTP ${res.status}`);
+          } catch (e) {
+            retries++;
+            if (retries >= 3) throw e;
+            await new Promise(r => setTimeout(r, 1000));
+          }
+        }
+
+        lastData = await res.json();
+        if (!lastData.success) {
+          throw new Error(lastData.error || 'Chunk upload failed');
+        }
+      }
+
+      if (lastData && lastData.is_complete) {
+        document.getElementById('uploadedVideoPath').value = lastData.video_file_path;
+        CURRENT_PREPARED_JOB = lastData.upload_id;
+        lbl.textContent = `Ready (${(lastData.duration || 0).toFixed(1)}s)`;
+        document.getElementById('durationRouteIndicator').textContent =
+          `Duration: ${(lastData.duration || 0).toFixed(1)}s (${(lastData.duration || 0) <= 180 ? '≤3 min' : '>3 min'}) · Smart Route: ${lastData.smart_routed_tts_model}`;
+        document.getElementById('jobStatusText').textContent = `SYS > Video uploaded & verified (${(lastData.duration || 0).toFixed(1)}s). Ready to process.`;
+      }
+      return lastData;
+    }
 
     async function handleVideoUpload(inputEl) {
       if (!inputEl.files || !inputEl.files[0]) return;
       const file = inputEl.files[0];
-      const lbl = document.getElementById('uploadStatusLabel');
-      lbl.textContent = 'Uploading...';
+      SELECTED_FILE = file;
 
       // 1. Instant 0ms local video preview!
       try {
@@ -808,23 +865,13 @@
         console.warn(e);
       }
 
-      // 2. Upload to server in background
-      const fd = new FormData();
-      fd.append('file', file);
-      try {
-        const res = await fetch('/api/video/upload-video', { method: 'POST', body: fd });
-        const data = await res.json();
-        if (data.success) {
-          document.getElementById('uploadedVideoPath').value = data.video_file_path;
-          CURRENT_PREPARED_JOB = data.upload_id;
-          lbl.textContent = `Ready (${data.duration.toFixed(1)}s)`;
-          document.getElementById('durationRouteIndicator').textContent =
-            `Duration: ${data.duration.toFixed(1)}s (${data.duration <= 180 ? '≤3 min' : '>3 min'}) · Smart Route: ${data.smart_routed_tts_model}`;
-          document.getElementById('jobStatusText').textContent = `SYS > Upload ready (${data.duration.toFixed(1)}s). Ready to render.`;
-        }
-      } catch (err) {
-        lbl.textContent = 'Upload failed';
-      }
+      // 2. Start chunked background upload (bypassing Vercel 4.5MB limit)
+      ACTIVE_UPLOAD_PROMISE = uploadFileInChunks(file).catch(err => {
+        console.error('Upload failed:', err);
+        document.getElementById('uploadStatusLabel').textContent = 'Upload failed';
+        document.getElementById('jobStatusText').textContent = `SYS > Upload failed: ${err.message}`;
+        return null;
+      });
     }
 
     async function fetchAndPreviewUrl() {
@@ -866,9 +913,19 @@
     function refreshCurrentPreview() {
       const player = document.getElementById('studioVideoPlayer');
       if (player.src) {
+        const cur = player.src;
+        player.src = '';
+        setTimeout(() => {
+          player.src = cur;
+          player.load();
+          player.play().catch(() => {});
+          document.getElementById('jobStatusText').textContent = 'SYS > Preview reloaded.';
+        }, 50);
+      } else if (SELECTED_FILE) {
+        player.src = URL.createObjectURL(SELECTED_FILE);
         player.load();
         player.play().catch(() => {});
-        document.getElementById('jobStatusText').textContent = 'SYS > Preview reloaded.';
+        document.getElementById('jobStatusText').textContent = 'SYS > Local preview reloaded.';
       }
     }
 
@@ -877,6 +934,10 @@
       player.pause();
       player.removeAttribute('src');
       player.load();
+
+      SELECTED_FILE = null;
+      ACTIVE_UPLOAD_PROMISE = null;
+      CURRENT_PREPARED_JOB = null;
 
       document.getElementById('videoUrl').value = '';
       document.getElementById('videoFileInput').value = '';
@@ -888,14 +949,48 @@
       document.getElementById('jobProgressBar').style.width = '0%';
       document.getElementById('jobLinksRow').style.display = 'none';
 
-      CURRENT_PREPARED_JOB = null;
       switchStep(1);
       document.getElementById('videoUrl').focus();
     }
 
     async function triggerSubmitJob() {
       const url = document.getElementById('videoUrl').value.trim();
-      const video_file_path = document.getElementById('uploadedVideoPath').value.trim();
+      let video_file_path = document.getElementById('uploadedVideoPath').value.trim();
+
+      // If upload is in flight, await it!
+      if (ACTIVE_UPLOAD_PROMISE) {
+        const statusEl = document.getElementById('jobStatusText');
+        const percentEl = document.getElementById('jobPercentText');
+        const barEl = document.getElementById('jobProgressBar');
+        percentEl.textContent = '5%';
+        barEl.style.width = '5%';
+        statusEl.textContent = 'SYS > Finishing video upload to server (please wait)...';
+        try {
+          const upRes = await ACTIVE_UPLOAD_PROMISE;
+          if (upRes && upRes.video_file_path) {
+            video_file_path = upRes.video_file_path;
+            CURRENT_PREPARED_JOB = upRes.upload_id;
+          }
+        } catch (e) {
+          console.warn("Upload await notice:", e);
+        }
+      } else if (!video_file_path && !url && SELECTED_FILE) {
+        // Selected a file but upload hasn't started or was cleared
+        const statusEl = document.getElementById('jobStatusText');
+        statusEl.textContent = 'SYS > Uploading video file...';
+        try {
+          ACTIVE_UPLOAD_PROMISE = uploadFileInChunks(SELECTED_FILE);
+          const upRes = await ACTIVE_UPLOAD_PROMISE;
+          if (upRes && upRes.video_file_path) {
+            video_file_path = upRes.video_file_path;
+            CURRENT_PREPARED_JOB = upRes.upload_id;
+          }
+        } catch (e) {
+          alert(`Upload error: ${e.message}`);
+          return;
+        }
+      }
+
       if (!url && !video_file_path && !CURRENT_PREPARED_JOB) {
         alert("Please enter a video URL or upload a video file first.");
         return;

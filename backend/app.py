@@ -175,6 +175,58 @@ async def preview_voice_sample(
 # 3. VIDEO UPLOAD, PREVIEW & 4-STAGE PROCESSING ENGINE
 # ============================================================================
 
+@app.post("/api/video/upload-chunk")
+async def upload_video_chunk_endpoint(
+    upload_id: str = Form(...),
+    chunk_index: int = Form(...),
+    total_chunks: int = Form(...),
+    filename: str = Form(...),
+    chunk: UploadFile = File(...)
+) -> Dict[str, Any]:
+    job_dir = JOBS_DIR / upload_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    ext = Path(filename or "video.mp4").suffix or ".mp4"
+    dest_path = job_dir / f"source{ext}"
+
+    mode = "ab" if chunk_index > 0 else "wb"
+    with dest_path.open(mode) as f:
+        while data := await chunk.read(1024 * 1024):
+            f.write(data)
+
+    is_complete = (chunk_index + 1) >= total_chunks
+    meta: Dict[str, Any] = {"duration": 0.0, "width": 1280, "height": 720}
+    routed = ["gemini-3.8-flash-tts"]
+
+    if is_complete:
+        meta = await asyncio.to_thread(probe_media_info, dest_path)
+        routed = key_pool.resolve_gemini_tts_models(video_duration_sec=float(meta.get("duration", 0.0)))
+        JOBS[upload_id] = {
+            "job_id": upload_id,
+            "status": "ready",
+            "video_path": str(dest_path),
+            "media_info": {"video_path": str(dest_path), "title": Path(filename).stem, **meta},
+            "duration": float(meta.get("duration", 0.0)),
+            "routed_tts_model": routed[0],
+            "created_at": int(time.time()),
+        }
+        _save_jobs()
+
+    return {
+        "success": True,
+        "upload_id": upload_id,
+        "chunk_index": chunk_index,
+        "total_chunks": total_chunks,
+        "is_complete": is_complete,
+        "video_file_path": str(dest_path) if is_complete else "",
+        "filename": filename,
+        "duration": meta.get("duration", 0.0),
+        "width": meta.get("width", 1280),
+        "height": meta.get("height", 720),
+        "smart_routed_tts_model": routed[0],
+        "preview_url": f"/api/video/local-preview/{upload_id}" if is_complete else "",
+    }
+
+
 @app.post("/api/video/upload-video")
 async def upload_source_video_endpoint(file: UploadFile = File(...)) -> Dict[str, Any]:
     upload_id = f"up_{int(time.time())}_{uuid.uuid4().hex[:6]}"
@@ -233,6 +285,11 @@ async def stream_local_preview(job_id: str) -> FileResponse:
         p = job_dir / candidate
         if p.exists():
             return FileResponse(str(p), media_type="video/mp4")
+    for p in job_dir.glob("source.*"):
+        if p.suffix.lower() not in (".json", ".part", ".ytdl", ".txt", ".mp3", ".wav"):
+            return FileResponse(str(p), media_type="video/mp4")
+    for p in job_dir.glob("final_output.*"):
+        return FileResponse(str(p), media_type="video/mp4")
     raise HTTPException(status_code=404, detail="Video file not found")
 
 
@@ -405,6 +462,10 @@ async def step_prepare_video(request: Request) -> Any:
         elif (job_dir / "source.mp4").exists():
             # Reusing already prepared source video from preview fetch!
             src_path = job_dir / "source.mp4"
+            meta = await asyncio.to_thread(probe_media_info, src_path)
+            media_info = {"video_path": str(src_path), "title": params.get("title") or src_path.stem, **meta}
+        elif [p for p in job_dir.glob("source.*") if p.suffix.lower() not in (".json", ".part", ".ytdl", ".txt", ".mp3", ".wav")]:
+            src_path = [p for p in job_dir.glob("source.*") if p.suffix.lower() not in (".json", ".part", ".ytdl", ".txt", ".mp3", ".wav")][0]
             meta = await asyncio.to_thread(probe_media_info, src_path)
             media_info = {"video_path": str(src_path), "title": params.get("title") or src_path.stem, **meta}
         elif params.get("url"):

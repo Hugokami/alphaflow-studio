@@ -1,0 +1,9 @@
+name = "alphaflow-studio"
+main = "worker.js"
+compatibility_date = "2025-02-01"
+
+[vars]
+DEFAULT_GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts"
+SHORT_VIDEO_TTS_MODEL = "gemini-3.8-flash-tts"
+LONG_VIDEO_TTS_MODEL = "gemini-3.8-flash-lite-tts"
+DURATION_THRESHOLD_SEC = "180"

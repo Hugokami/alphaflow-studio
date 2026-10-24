@@ -1,0 +1,28 @@
+# Secrets & Local Environment
+.env
+.env.*
+!.env.example
+
+# Temporary and Output data
+data/
+data/jobs/
+data/voice_samples/
+data/*.json
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Vercel deployment cache
+.vercel/
+
+# Cloudflare / Node
+node_modules/
+.wrangler/
+.DS_Store

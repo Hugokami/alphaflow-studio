@@ -1,0 +1,89 @@
+name: AlphaFlow Zero-Cost Serverless Video Render Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: "Job ID"
+        required: true
+        default: "gha_job_01"
+      url:
+        description: "Source Video URL (YouTube / TikTok / FB / IG)"
+        required: true
+      mode:
+        description: "Processing Mode (recap | dubbing | subtitle)"
+        required: false
+        default: "recap"
+      voice:
+        description: "Voice ID (e.g. Charon, Kore, Puck, my-MM-ThihaNeural)"
+        required: false
+        default: "Charon"
+      gemini_tts_model:
+        description: "Gemini TTS Model (auto_duration | gemini-2.5-flash-preview-tts | gemini-3.8-flash-tts | gemini-3.8-flash-lite-tts)"
+        required: false
+        default: "auto_duration"
+      aspect_ratio:
+        description: "Aspect Ratio (9:16 | 3:4 | 1:1 | original)"
+        required: false
+        default: "9:16"
+      webhook_url:
+        description: "Cloudflare Worker Completion Webhook URL"
+        required: false
+        default: ""
+  repository_dispatch:
+    types: [alphaflow-render]
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install FFmpeg & Fonts (Myanmar Unicode Support)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-extra
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install edge-tts yt-dlp fastapi uvicorn python-multipart
+
+      - name: Run AlphaFlow Render Engine
+        working-directory: alphaflow
+        env:
+          GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
+          GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          JOB_ID="${{ github.event.inputs.job_id || github.event.client_payload.job_id || 'gha_job' }}"
+          VIDEO_URL="${{ github.event.inputs.url || github.event.client_payload.url }}"
+          MODE="${{ github.event.inputs.mode || github.event.client_payload.mode || 'recap' }}"
+          VOICE="${{ github.event.inputs.voice || github.event.client_payload.voice || 'Charon' }}"
+          TTS_MODEL="${{ github.event.inputs.gemini_tts_model || github.event.client_payload.gemini_tts_model || 'auto_duration' }}"
+          RATIO="${{ github.event.inputs.aspect_ratio || github.event.client_payload.aspect_ratio || '9:16' }}"
+          WEBHOOK="${{ github.event.inputs.webhook_url || github.event.client_payload.webhook_url || '' }}"
+
+          python cli_render.py \
+            --job-id "$JOB_ID" \
+            --url "$VIDEO_URL" \
+            --mode "$MODE" \
+            --voice "$VOICE" \
+            --gemini-tts-model "$TTS_MODEL" \
+            --aspect-ratio "$RATIO" \
+            --webhook-url "$WEBHOOK"
+
+      - name: Upload Rendered Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alphaflow-video-${{ github.run_id }}
+          path: alphaflow/data/jobs/*/final_output.mp4
+          retention-days: 7

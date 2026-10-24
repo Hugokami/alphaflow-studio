@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AlphaFlow AI Studio — Zero-Cost Video Recap, Dubbing & Subtitle Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* 60-30-10 Palette Architecture */
+      --bg-canvas: #0D1117;       /* 60% Dominant Obsidian Base */
+      --bg-surface: #161B24;      /* 30% Structural Secondary */
+      --bg-well: #1F2633;
+      --border-hairline: rgba(255, 255, 255, 0.10);
+      --text-primary: #F8FAFC;
+      --text-secondary: #94A3B8;
+      --accent: #BA4A25;          /* 10% High-Energy Focal Accent */
+      --accent-bright: #E05A2B;
+      --emerald: #10B981;
+      --amber: #F59E0B;
+      --danger: #EF4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-canvas);
+      color: var(--text-primary);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      line-height: 1.45;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    /* Top Header */
+    header {
+      height: 64px;
+      background: rgba(22, 27, 36, 0.92);
+      border-bottom: 1px solid var(--border-hairline);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(12px);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 1.2rem;
+      letter-spacing: -0.02em;
+    }
+    .brand-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--emerald);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .pill-btn {
+      background: var(--bg-well);
+      color: var(--text-primary);
+      border: 1px solid var(--border-hairline);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.18s ease-out;
+    }
+    .pill-btn:hover { border-color: var(--accent-bright); transform: translateY(-1px); }
+    .pill-btn.primary {
+      background: var(--accent);
+      border-color: var(--accent-bright);
+    }
+    .pill-btn.primary:hover { background: var(--accent-bright); }
+
+    /* Asymmetric 1/3 + 2/3 Studio Workspace */
+    .studio-grid {
+      max-width: 1480px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 1.05fr 1.45fr;
+      gap: 24px;
+      flex: 1;
+    }
+    @media (max-width: 1024px) {
+      .studio-grid { grid-template-columns: 1fr; }
+    }
+    .bento-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: 14px;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-hairline);
+      padding-bottom: 12px;
+    }
+    .card-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.02rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .micro-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(186, 74, 37, 0.18);
+      color: #FF8A65;
+      border: 1px solid rgba(186, 74, 37, 0.4);
+    }
+
+    /* Stepper Tabs */
+    .wizard-tabs {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      background: var(--bg-canvas);
+      padding: 6px;
+      border-radius: 10px;
+      border: 1px solid var(--border-hairline);
+    }
+    .step-tab {
+      background: transparent;
+      color: var(--text-secondary);
+      border: none;
+      padding: 9px 6px;
+      border-radius: 7px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease-out;
+    }
+    .step-tab.active {
+      background: var(--accent);
+      color: #fff;
+    }
+    .step-pane { display: none; flex-direction: column; gap: 16px; }
+    .step-pane.active { display: flex; }
+
+    /* Form Controls */
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-secondary);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .input, select, textarea {
+      width: 100%;
+      background: var(--bg-canvas);
+      color: var(--text-primary);
+      border: 1px solid var(--border-hairline);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 0.88rem;
+      font-family: inherit;
+    }
+    .input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent-bright);
+    }
+    .segmented-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .seg-btn {
+      background: var(--bg-canvas);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-hairline);
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+    }
+    .seg-btn.active {
+      border-color: var(--accent-bright);
+      background: rgba(186, 74, 37, 0.18);
+      color: #fff;
+    }
+
+    /* Smart Gemini TTS Routing Banner */
+    .smart-route-box {
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .smart-route-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--emerald);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .smart-route-desc {
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+    }
+
+    /* Voice Grid */
+    .voice-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(205px, 1fr));
+      gap: 10px;
+      max-height: 290px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .voice-card {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-hairline);
+      border-radius: 10px;
+      padding: 11px 12px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: all 0.15s ease-out;
+    }
+    .voice-card:hover { border-color: rgba(255,255,255,0.28); }
+    .voice-card.selected {
+      border-color: var(--accent-bright);
+      background: rgba(186, 74, 37, 0.14);
+    }
+    .voice-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 700;
+      font-size: 0.84rem;
+    }
+    .v-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.62rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+    .v-tag.gemini { background: rgba(59, 130, 246, 0.2); color: #60A5FA; }
+    .v-tag.ms { background: rgba(16, 185, 129, 0.2); color: #34D399; }
+
+    /* Preview Stage */
+    .preview-stage {
+      background: #05070A;
+      border: 1px solid var(--border-hairline);
+      border-radius: 12px;
+      aspect-ratio: 16 / 9;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .preview-stage video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .terminal-box {
+      background: #07090D;
+      border: 1px solid var(--border-hairline);
+      border-radius: 10px;
+      padding: 14px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: #A7F3D0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .progress-bar-wrap {
+      width: 100%;
+      height: 8px;
+      background: var(--bg-well);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--emerald));
+      transition: width 0.25s ease-out;
+    }
+
+    /* Modal Drawer for Multi-Key Pool */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 20px;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: 14px;
+      max-width: 720px;
+      width: 100%;
+      max-height: 88vh;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .key-list { display: flex; flex-direction: column; gap: 8px; }
+    .key-row {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-hairline);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.82rem;
+    }
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    .status-dot.active { background: var(--emerald); }
+    .status-dot.cooldown { background: var(--amber); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span>⚡ AlphaFlow Studio</span>
+      <span class="brand-badge">$0 Zero-Cost Engine · 45 Voices Unlocked</span>
+    </div>
+    <div class="header-actions">
+      <button class="pill-btn" onclick="openKeyModal()">
+        🔑 API Key Pool & Failover (<span id="headerKeyCount">4</span> Gemini · <span id="headerGroqCount">1</span> Groq)
+      </button>
+      <button class="pill-btn primary" onclick="triggerSubmitJob()">
+        🚀 Start Render
+      </button>
+    </div>
+  </header>
+
+  <main class="studio-grid">
+    <!-- LEFT 1/3: 4-Step Wizard Controls -->
+    <section class="bento-card">
+      <div class="card-header">
+        <div class="card-title">🎛️ Studio Configuration</div>
+        <span class="micro-badge" id="activeModeBadge">RECAP MODE</span>
+      </div>
+
+      <div class="wizard-tabs">
+        <button class="step-tab active" onclick="switchStep(1)">1. Source</button>
+        <button class="step-tab" onclick="switchStep(2)">2. Voice & TTS</button>
+        <button class="step-tab" onclick="switchStep(3)">3. Effects</button>
+        <button class="step-tab" onclick="switchStep(4)">4. Export</button>
+      </div>
+
+      <!-- STEP 1: SOURCE -->
+      <div id="stepPane1" class="step-pane active">
+        <div class="form-group">
+          <label class="form-label">
+            <span>Video Source URL (YouTube, TikTok, FB, IG)</span>
+            <span style="color:var(--emerald);">yt-dlp Ready</span>
+          </label>
+          <input type="url" id="videoUrl" class="input" placeholder="https://www.youtube.com/watch?v=... or TikTok URL" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">
+            <span>Or Upload Local Video File (MP4 / MOV / MKV / WebM)</span>
+            <span id="uploadStatusLabel">Max 500 MB</span>
+          </label>
+          <input type="file" id="videoFileInput" class="input" accept="video/*" onchange="handleVideoUpload(this)" />
+          <input type="hidden" id="uploadedVideoPath" value="" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Processing Mode</label>
+          <div class="segmented-row">
+            <button type="button" class="seg-btn" data-mode="subtitle" onclick="selectMode('subtitle')">Subtitle Mode</button>
+            <button type="button" class="seg-btn active" data-mode="recap" onclick="selectMode('recap')">Recap Mode</button>
+            <button type="button" class="seg-btn" data-mode="dubbing" onclick="selectMode('dubbing')">Dubbing Mode</button>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div class="form-group">
+            <label class="form-label">Aspect Ratio</label>
+            <select id="aspectRatio">
+              <option value="original">Original Ratio</option>
+              <option value="9:16" selected>9:16 (Shorts / TikTok / Reels)</option>
+              <option value="3:4">3:4 Portrait</option>
+              <option value="1:1">1:1 Square</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Target Language</label>
+            <select id="targetLanguage">
+              <option value="Burmese (Myanmar Language)" selected>Burmese (မြန်မာ)</option>
+              <option value="English">English</option>
+              <option value="Thai">Thai (ไทย)</option>
+              <option value="Japanese">Japanese</option>
+              <option value="Korean">Korean</option>
+              <option value="Chinese">Chinese (Mandarin)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="smart-route-box">
+          <div class="smart-route-title">
+            <span>🛡️ Anti-ContentID Copyright Bypass</span>
+            <input type="checkbox" id="useZoom" checked />
+          </div>
+          <div class="smart-route-desc">
+            Applies dynamic sinusoidal crop pan + subtle EQ contrast shift to defeat perceptual frame hashing.
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 2: VOICE & SMART GEMINI TTS ROUTER -->
+      <div id="stepPane2" class="step-pane">
+        <div class="smart-route-box">
+          <div class="smart-route-title">
+            <span>🧠 Smart Gemini TTS Model Router</span>
+            <span id="smartRouteBadge" class="v-tag gemini">AUTO: ≤3m 3.8-Flash · >3m 3.8-Lite</span>
+          </div>
+          <div class="smart-route-desc">
+            Automatically uses <b>gemini-3.8-flash-tts</b> for videos under 3 min, <b>gemini-3.8-flash-lite-tts</b> for videos over 3 min, and <b>gemini-2.5-flash-preview-tts</b> as default/fallback across your 4-key pool.
+          </div>
+          <select id="geminiTtsModel" style="margin-top:6px;" onchange="updateSmartRouteBadge()">
+            <option value="auto_duration" selected>⚡ Auto Smart Duration (≤3m: 3.8 Flash TTS · >3m: 3.8 Flash Lite TTS)</option>
+            <option value="gemini-2.5-flash-preview-tts">🎯 Default: Gemini 2.5 Flash TTS (gemini-2.5-flash-preview-tts)</option>
+            <option value="gemini-3.8-flash-tts">🔥 Force: Gemini 3.8 Flash TTS (gemini-3.8-flash-tts)</option>
+            <option value="gemini-3.8-flash-lite-tts">🚀 Force: Gemini 3.8 Flash Lite TTS (gemini-3.8-flash-lite-tts)</option>
+            <option value="gemini-2.5-pro-preview-tts">💎 Force: Gemini 2.5 Pro TTS (gemini-2.5-pro-preview-tts)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">
+            <span>Select Voice (15 Microsoft Free + 30 Gemini Pro Unlocked)</span>
+            <input type="search" id="voiceSearch" placeholder="Search voice..." style="width:150px; padding:4px 8px; font-size:0.75rem;" oninput="renderVoices()" />
+          </label>
+          <div id="voiceGrid" class="voice-grid"></div>
+          <input type="hidden" id="selectedVoiceId" value="Charon" />
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;">
+          <div class="form-group">
+            <label class="form-label">Speed (<span id="speedVal">1.0x</span>)</label>
+            <input type="range" id="voiceSpeed" min="0.85" max="1.8" step="0.05" value="1.0" oninput="document.getElementById('speedVal').textContent=this.value+'x'" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Voice Finish</label>
+            <select id="audioEnhancement">
+              <option value="deepfilter">V1: Crisp (DeepFilter)</option>
+              <option value="studio">V2: Clear (Studio EQ)</option>
+              <option value="none" selected>V3: Warm (Natural)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Preview Voice</label>
+            <button type="button" class="pill-btn" style="justify-content:center;" onclick="previewSelectedVoice()">
+              ▶️ Hear Sample
+            </button>
+          </div>
+        </div>
+        <audio id="voiceSampleAudio" controls style="width:100%; height:34px; display:none;"></audio>
+      </div>
+
+      <!-- STEP 3: EFFECTS & SUBTITLES -->
+      <div id="stepPane3" class="step-pane">
+        <div class="form-group">
+          <label class="form-label">
+            <span>Burn-in Subtitles (Hardsub + Downloadable .SRT)</span>
+            <input type="checkbox" id="subtitleEnabled" checked />
+          </label>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <select id="subtitleFontSize">
+              <option value="36">Small (36px)</option>
+              <option value="55" selected>Medium (55px)</option>
+              <option value="72">Large (72px)</option>
+            </select>
+            <select id="subtitleType">
+              <option value="encode" selected>Burn into Video (Hardsub)</option>
+              <option value="file">SRT File Only</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">
+            <span>Hardsub Blur Mask (Covers Foreign Chinese/Thai/English Subtitles)</span>
+            <input type="checkbox" id="blurEnabled" />
+          </label>
+          <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px;">
+            <div><small>X %</small><input type="number" id="blurX" class="input" value="10" min="0" max="90" /></div>
+            <div><small>Y %</small><input type="number" id="blurY" class="input" value="82" min="0" max="95" /></div>
+            <div><small>W %</small><input type="number" id="blurW" class="input" value="80" min="5" max="100" /></div>
+            <div><small>H %</small><input type="number" id="blurH" class="input" value="12" min="5" max="40" /></div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Custom Narration Script Override (Optional — Leave blank for AI Auto-Recap)</label>
+          <textarea id="customScript" rows="3" placeholder="Leave empty for Gemini 2.5 Flash / Groq Llama-3.3-70B to write the Burmese recap automatically, or paste your own verbatim Burmese script here..."></textarea>
+        </div>
+      </div>
+
+      <!-- STEP 4: ADVANCED & TELEGRAM DELIVERY -->
+      <div id="stepPane4" class="step-pane">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div class="form-group">
+            <label class="form-label">Script Style</label>
+            <select id="scriptStyle">
+              <option value="Engaging Story" selected>Engaging Story (TBH / Viral Recap)</option>
+              <option value="Professional">Professional Documentary</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Voice Tone</label>
+            <select id="voiceTone">
+              <option value="Energetic" selected>Energetic</option>
+              <option value="Calm">Calm & Suspenseful</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="smart-route-box">
+          <div class="smart-route-title">
+            <span>✈️ Free Unlimited Telegram Cloud Archive (@hyugoustoragebot)</span>
+            <input type="checkbox" id="pushTelegram" checked />
+          </div>
+          <div class="smart-route-desc">
+            Automatically pushes finished MP4 videos to your Telegram Bot for unlimited $0 permanent cloud storage.
+          </div>
+        </div>
+
+        <div style="display:flex; gap:14px;">
+          <label style="font-size:0.82rem; display:flex; align-items:center; gap:6px;">
+            <input type="checkbox" id="sfxOnly" checked /> Keep Background SFX/Music Mix
+          </label>
+          <label style="font-size:0.82rem; display:flex; align-items:center; gap:6px;">
+            <input type="checkbox" id="autoColor" checked /> Auto Cinema Color Grade
+          </label>
+          <label style="font-size:0.82rem; display:flex; align-items:center; gap:6px;">
+            <input type="checkbox" id="flipVideo" /> Horizontal Mirror Flip
+          </label>
+        </div>
+
+        <button type="button" class="pill-btn primary" style="justify-content:center; padding:14px; font-size:0.95rem;" onclick="triggerSubmitJob()">
+          🚀 Render Final Video Now
+        </button>
+      </div>
+    </section>
+
+    <!-- RIGHT 2/3: Live Video Stage, Telemetry & Generated Script -->
+    <section class="bento-card">
+      <div class="card-header">
+        <div class="card-title">🎬 Live Studio Monitor & Render Telemetry</div>
+        <span class="micro-badge" id="durationRouteIndicator">Duration: -- · Route: gemini-3.8-flash-tts</span>
+      </div>
+
+      <div class="preview-stage">
+        <video id="studioVideoPlayer" controls playsinline></video>
+      </div>
+
+      <div class="terminal-box">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span id="jobStatusText">SYS &gt; Ready. Multi-Key Failover Pool armed.</span>
+          <span id="jobPercentText">0%</span>
+        </div>
+        <div class="progress-bar-wrap">
+          <div id="jobProgressBar" class="progress-bar-fill"></div>
+        </div>
+        <div id="jobLinksRow" style="display:none; gap:10px; margin-top:6px;">
+          <a id="downloadMp4Link" class="pill-btn primary" href="#" download>⬇️ Download MP4</a>
+          <a id="downloadSrtLink" class="pill-btn" href="#" download>📝 Download .SRT</a>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">
+          <span>Generated Burmese Recap / Dubbing Script & Captions</span>
+          <span id="scriptModelUsedLabel">Gemini 2.5 Flash + Multi-Key Pool</span>
+        </label>
+        <textarea id="generatedScriptOutput" rows="5" readonly placeholder="Generated Burmese narration and timestamped captions will appear here during processing..."></textarea>
+      </div>
+    </section>
+  </main>
+
+  <!-- MULTI-KEY POOL & FAILOVER MODAL -->
+  <div id="keyModal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="card-header">
+        <div class="card-title">🔑 Multi-Key API Pool & Automatic Failover Manager</div>
+        <button class="pill-btn" onclick="closeKeyModal()">✕ Close</button>
+      </div>
+
+      <p style="font-size:0.82rem; color:var(--text-secondary);">
+        When any Google AI Studio or Groq key hits a rate limit or runs out of daily quota (HTTP 429), AlphaFlow places that key on cooldown and <b>instantly switches to the next healthy key</b> in your pool without interrupting your video render.
+      </p>
+
+      <div style="display:grid; grid-template-columns:120px 1fr 140px auto; gap:8px;">
+        <select id="newKeyProvider">
+          <option value="gemini">Google Gemini</option>
+          <option value="groq">Groq Cloud</option>
+        </select>
+        <input type="text" id="newKeyValue" class="input" placeholder="Paste your Gemini (AQ... or AIza...) or Groq API key" />
+        <input type="text" id="newKeyLabel" class="input" placeholder="Account Label" />
+        <button class="pill-btn primary" onclick="addKeyToPool()">+ Add Key</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">
+          <span>Google AI Studio Keys (Gemini 2.5 TTS / 3.8 Flash TTS / 3.8 Flash Lite TTS)</span>
+          <button class="pill-btn" style="padding:3px 8px; font-size:0.7rem;" onclick="resetAllCooldowns()">Reset Cooldowns</button>
+        </label>
+        <div id="geminiKeyList" class="key-list"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Groq Cloud Keys (Whisper Large v3 Turbo + Llama 3.3 70B)</label>
+        <div id="groqKeyList" class="key-list"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Telegram Bot Storage (@hyugoustoragebot)</label>
+        <div style="display:grid; grid-template-columns:1fr 180px auto; gap:8px;">
+          <input type="text" id="tgBotTokenInput" class="input" placeholder="Bot Token (e.g. 123456789:AA...)" />
+          <input type="text" id="tgChatIdInput" class="input" placeholder="Chat ID (auto-detected)" />
+          <button class="pill-btn" onclick="saveTelegramConfig()">Save TG</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let ALL_VOICES = [];
+    let CURRENT_MODE = 'recap';
+    let ACTIVE_POLL_TIMER = null;
+
+    function switchStep(stepNum) {
+      document.querySelectorAll('.step-tab').forEach((btn, idx) => {
+        btn.classList.toggle('active', idx + 1 === stepNum);
+      });
+      document.querySelectorAll('.step-pane').forEach((pane, idx) => {
+        pane.classList.toggle('active', idx + 1 === stepNum);
+      });
+    }
+
+    function selectMode(mode) {
+      CURRENT_MODE = mode;
+      document.querySelectorAll('.seg-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+      });
+      document.getElementById('activeModeBadge').textContent = mode.toUpperCase() + ' MODE';
+      if (mode === 'dubbing') {
+        document.getElementById('voiceSpeed').value = '1.3';
+        document.getElementById('speedVal').textContent = '1.3x';
+      }
+    }
+
+    function updateSmartRouteBadge() {
+      const sel = document.getElementById('geminiTtsModel').value;
+      const badge = document.getElementById('smartRouteBadge');
+      if (sel === 'auto_duration') {
+        badge.textContent = 'AUTO: ≤3m 3.8-Flash · >3m 3.8-Lite';
+      } else {
+        badge.textContent = 'FIXED: ' + sel;
+      }
+    }
+
+    async function loadVoicesAndKeys() {
+      const [vRes, kRes] = await Promise.all([
+        fetch('/api/voices').then(r => r.json()),
+        fetch('/api/keys').then(r => r.json())
+      ]);
+      ALL_VOICES = vRes.voices || [];
+      renderVoices();
+      renderKeyPool(kRes);
+    }
+
+    function renderVoices() {
+      const q = (document.getElementById('voiceSearch').value || '').toLowerCase();
+      const selected = document.getElementById('selectedVoiceId').value;
+      const grid = document.getElementById('voiceGrid');
+      const filtered = ALL_VOICES.filter(v =>
+        !q || v.name.toLowerCase().includes(q) || v.id.toLowerCase().includes(q) || (v.burmese_name || '').includes(q)
+      );
+      grid.innerHTML = filtered.map(v => `
+        <div class="voice-card ${v.id === selected ? 'selected' : ''}" onclick="pickVoice('${v.id}')">
+          <div class="voice-card-top">
+            <span>${v.burmese_name || v.name}</span>
+            <span class="v-tag ${v.provider === 'gemini' ? 'gemini' : 'ms'}">${v.provider === 'gemini' ? 'Gemini' : 'Edge Free'}</span>
+          </div>
+          <div style="font-size:0.72rem; color:var(--text-secondary);">
+            ${v.id} · ${v.gender} ${v.popular ? '⭐' : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function pickVoice(id) {
+      document.getElementById('selectedVoiceId').value = id;
+      renderVoices();
+    }
+
+    async function previewSelectedVoice() {
+      const voice = document.getElementById('selectedVoiceId').value;
+      const speed = document.getElementById('voiceSpeed').value;
+      const enhancement = document.getElementById('audioEnhancement').value;
+      const ttsModel = document.getElementById('geminiTtsModel').value;
+      const audioEl = document.getElementById('voiceSampleAudio');
+      document.getElementById('jobStatusText').textContent = `SYS > Generating voice preview for ${voice} (${ttsModel})...`;
+      audioEl.style.display = 'block';
+      audioEl.src = `/api/video/voice-sample?voice=${encodeURIComponent(voice)}&speed=${speed}&enhancement=${enhancement}&tts_model=${encodeURIComponent(ttsModel)}&_=${Date.now()}`;
+      try {
+        await audioEl.play();
+        document.getElementById('jobStatusText').textContent = `SYS > Playing preview: ${voice}`;
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+
+    async function handleVideoUpload(inputEl) {
+      if (!inputEl.files || !inputEl.files[0]) return;
+      const file = inputEl.files[0];
+      const lbl = document.getElementById('uploadStatusLabel');
+      lbl.textContent = 'Uploading...';
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const res = await fetch('/api/video/upload-video', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById('uploadedVideoPath').value = data.video_file_path;
+          lbl.textContent = `Ready (${data.duration.toFixed(1)}s)`;
+          document.getElementById('durationRouteIndicator').textContent =
+            `Duration: ${data.duration.toFixed(1)}s (${data.duration <= 180 ? '≤3 min' : '>3 min'}) · Smart Route: ${data.smart_routed_tts_model}`;
+          const player = document.getElementById('studioVideoPlayer');
+          player.src = data.preview_url;
+        }
+      } catch (err) {
+        lbl.textContent = 'Upload failed';
+      }
+    }
+
+    async function triggerSubmitJob() {
+      const payload = {
+        url: document.getElementById('videoUrl').value.trim(),
+        video_file_path: document.getElementById('uploadedVideoPath').value.trim(),
+        processing_mode: CURRENT_MODE,
+        aspect_ratio: document.getElementById('aspectRatio').value,
+        target_language: document.getElementById('targetLanguage').value,
+        use_zoom: document.getElementById('useZoom').checked,
+        voice: document.getElementById('selectedVoiceId').value,
+        gemini_tts_model: document.getElementById('geminiTtsModel').value,
+        voice_speed: parseFloat(document.getElementById('voiceSpeed').value),
+        audio_enhancement: document.getElementById('audioEnhancement').value,
+        subtitle_enabled: document.getElementById('subtitleEnabled').checked,
+        subtitle_font_size: parseInt(document.getElementById('subtitleFontSize').value, 10),
+        subtitle_type: document.getElementById('subtitleType').value,
+        blur_enabled: document.getElementById('blurEnabled').checked,
+        blur_boxes: [{
+          x: parseFloat(document.getElementById('blurX').value),
+          y: parseFloat(document.getElementById('blurY').value),
+          w: parseFloat(document.getElementById('blurW').value),
+          h: parseFloat(document.getElementById('blurH').value)
+        }],
+        custom_script: document.getElementById('customScript').value.trim(),
+        script_style: document.getElementById('scriptStyle').value,
+        voice_tone: document.getElementById('voiceTone').value,
+        push_telegram: document.getElementById('pushTelegram').checked,
+        sfx_only: document.getElementById('sfxOnly').checked,
+        auto_color: document.getElementById('autoColor').checked,
+        flip_video: document.getElementById('flipVideo').checked
+      };
+
+      document.getElementById('jobLinksRow').style.display = 'none';
+      document.getElementById('jobStatusText').textContent = 'SYS > Submitting job to AlphaFlow Engine...';
+      document.getElementById('jobProgressBar').style.width = '5%';
+
+      const res = await fetch('/api/video/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.job_id) {
+        pollJob(data.job_id);
+      }
+    }
+
+    function pollJob(jobId) {
+      if (ACTIVE_POLL_TIMER) clearInterval(ACTIVE_POLL_TIMER);
+      ACTIVE_POLL_TIMER = setInterval(async () => {
+        const res = await fetch(`/api/video/status/${jobId}`);
+        if (!res.ok) return;
+        const job = await res.json();
+        document.getElementById('jobStatusText').textContent = `SYS > ${job.log || job.status}`;
+        document.getElementById('jobPercentText').textContent = `${job.progress || 0}%`;
+        document.getElementById('jobProgressBar').style.width = `${job.progress || 0}%`;
+
+        if (job.routed_tts_model) {
+          document.getElementById('durationRouteIndicator').textContent =
+            `Duration: ${(job.duration || 0).toFixed(1)}s · Active TTS: ${job.tts_model_used || job.routed_tts_model}`;
+        }
+        if (job.script && job.script.full_narration) {
+          document.getElementById('generatedScriptOutput').value = job.script.full_narration;
+        }
+        if (job.status === 'completed') {
+          clearInterval(ACTIVE_POLL_TIMER);
+          const player = document.getElementById('studioVideoPlayer');
+          player.src = job.download_url + '?t=' + Date.now();
+          player.play().catch(() => {});
+          const linksRow = document.getElementById('jobLinksRow');
+          linksRow.style.display = 'flex';
+          document.getElementById('downloadMp4Link').href = job.download_url;
+          document.getElementById('downloadSrtLink').href = job.srt_url;
+          loadVoicesAndKeys();
+        } else if (job.status === 'failed') {
+          clearInterval(ACTIVE_POLL_TIMER);
+        }
+      }, 1500);
+    }
+
+    function openKeyModal() { document.getElementById('keyModal').classList.add('open'); loadVoicesAndKeys(); }
+    function closeKeyModal() { document.getElementById('keyModal').classList.remove('open'); }
+
+    function renderKeyPool(pool) {
+      const gKeys = pool.gemini_keys || [];
+      const qKeys = pool.groq_keys || [];
+      document.getElementById('headerKeyCount').textContent = gKeys.length;
+      document.getElementById('headerGroqCount').textContent = qKeys.length;
+
+      document.getElementById('geminiKeyList').innerHTML = gKeys.map(k => `
+        <div class="key-row">
+          <div>
+            <span class="status-dot ${k.status}"></span>
+            <strong>${k.label}</strong> · <code>${k.masked}</code>
+            <span style="color:var(--text-secondary); margin-left:8px;">Calls: ${k.success_count} | Quota Failovers: ${k.quota_hits}</span>
+          </div>
+          <button class="pill-btn" style="padding:4px 8px; font-size:0.72rem;" onclick="removeKey('gemini','${k.id}')">Remove</button>
+        </div>
+      `).join('');
+
+      document.getElementById('groqKeyList').innerHTML = qKeys.map(k => `
+        <div class="key-row">
+          <div>
+            <span class="status-dot ${k.status}"></span>
+            <strong>${k.label}</strong> · <code>${k.masked}</code>
+            <span style="color:var(--text-secondary); margin-left:8px;">Calls: ${k.success_count} | Quota Failovers: ${k.quota_hits}</span>
+          </div>
+          <button class="pill-btn" style="padding:4px 8px; font-size:0.72rem;" onclick="removeKey('groq','${k.id}')">Remove</button>
+        </div>
+      `).join('');
+
+      if (pool.telegram) {
+        document.getElementById('tgChatIdInput').value = pool.telegram.chat_id || '';
+      }
+    }
+
+    async function addKeyToPool() {
+      const provider = document.getElementById('newKeyProvider').value;
+      const api_key = document.getElementById('newKeyValue').value.trim();
+      const label = document.getElementById('newKeyLabel').value.trim();
+      if (!api_key) return;
+      const res = await fetch('/api/keys/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, api_key, label })
+      });
+      const data = await res.json();
+      document.getElementById('newKeyValue').value = '';
+      document.getElementById('newKeyLabel').value = '';
+      if (data.pool) renderKeyPool(data.pool);
+    }
+
+    async function removeKey(provider, id) {
+      const res = await fetch(`/api/keys/${provider}/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.pool) renderKeyPool(data.pool);
+    }
+
+    async function resetAllCooldowns() {
+      const res = await fetch('/api/keys/reset-cooldowns', { method: 'POST' });
+      const data = await res.json();
+      if (data.pool) renderKeyPool(data.pool);
+    }
+
+    async function saveTelegramConfig() {
+      const bot_token = document.getElementById('tgBotTokenInput').value.trim() || undefined;
+      const chat_id = document.getElementById('tgChatIdInput').value.trim();
+      await fetch('/api/telegram/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bot_token, chat_id })
+      });
+      loadVoicesAndKeys();
+    }
+
+    loadVoicesAndKeys();
+  </script>
+</body>
+</html>

@@ -1,0 +1,255 @@
+from typing import Dict, List, Any
+
+# Complete 45-Voice Catalog (Reverse-Engineered from TeamAlpha + Enhanced)
+# - 15 Free Microsoft Neural Voices (including the 13 MultilingualNeural Burmese-capable voices)
+# - 30 Pro Google Gemini Prebuilt Voices (supporting Gemini 2.5 TTS, Gemini 3.8 Flash TTS & 3.8 Flash Lite TTS)
+
+VOICE_CATALOG: List[Dict[str, Any]] = [
+    # === 15 MICROSOFT EDGE-TTS VOICES (100% Free, Zero API Key Needed) ===
+    {
+        "id": "my-MM-ThihaNeural",
+        "key": "Microsoft Burmese Male Thiha",
+        "name": "Thiha (သီဟ)",
+        "burmese_name": "သီဟ",
+        "provider": "microsoft",
+        "gender": "male",
+        "tier": "free",
+        "popular": True,
+        "styles": ["Neural", "Natural", "Recap Anchor"],
+        "sample_text": "မင်္ဂလာပါခင်ဗျာ၊ အယ်လ်ဖာဖလိုး စတူဒီယိုမှ ကြိုဆိုပါတယ်။",
+    },
+    {
+        "id": "my-MM-NilarNeural",
+        "key": "Microsoft Burmese Female Nilar",
+        "name": "Nilar (နီလာ)",
+        "burmese_name": "နီလာ",
+        "provider": "microsoft",
+        "gender": "female",
+        "tier": "free",
+        "popular": True,
+        "styles": ["Warm", "Clear"],
+        "sample_text": "မင်္ဂလာပါရှင်၊ ဒီနေ့တင်ဆက်ပေးမယ့် ဇာတ်လမ်းလေးကတော့ အရမ်းစိတ်ဝင်စားဖို့ကောင်းပါတယ်။",
+    },
+    {
+        "id": "it-IT-GiuseppeMultilingualNeural",
+        "key": "Microsoft Italian Male Wunna",
+        "name": "Wunna (ဝဏ္ဏ)",
+        "burmese_name": "ဝဏ္ဏ",
+        "provider": "microsoft",
+        "gender": "male",
+        "tier": "free",
+        "popular": False,
+        "styles": ["Professional", "Calm"],
+        "sample_text": "မင်္ဂလာပါ၊ ဒီဇာတ်လမ်းရဲ့ အဓိကလျှို့ဝှက်ချက်ကို အတူတူကြည့်လိုက်ရအောင်။",
+    },
+    {
+        "id": "de-DE-SeraphinaMultilingualNeural",
+        "key": "Microsoft Burmese Female Myat",
+        "name": "Myat (မြတ်)",
+        "burmese_name": "မြတ်",
+        "provider": "microsoft",
+        "gender": "female",
+        "tier": "free",
+        "popular": False,
+        "styles": ["Energetic", "Bright"],
+        "sample_text": "မင်္ဂလာပါရှင်၊ အခုပြသပေးမယ့် အပိုင်းလေးကို အဆုံးထိကြည့်ပေးကြပါဦးနော်။",
+    },
+    {
+        "id": "en-AU-WilliamMultilingualNeural",
+        "key": "ဇော်",
+        "name": "Zaw (ဇော်)",
+        "burmese_name": "ဇော်",
+        "provider": "microsoft",
+        "gender": "male",
+        "tier": "free",
+        "popular": False,
+        "styles": ["Deep", "Resonant"],
+        "sample_text": "မင်္ဂလာပါ၊ သည်းထိတ်ရင်ဖို ဇာတ်လမ်းကောင်းတစ်ပုဒ်ကို စတင်လိုက်ရအောင်။",
+    },
+    {
+        "id": "fr-FR-RemyMultilingualNeural",
+        "key": "Microsoft Burmese Male Su",
+        "name": "Su Male (ဆု - အမျိုးသား)",
+        "burmese_name": "ဆု (ကျား)",
+        "provider": "microsoft",
+        "gender": "male",
+        "tier": "free",
+        "popular": False,
+        "styles": ["Warm", "Natural"],
+        "sample_text": "မင်္ဂလာပါခင်ဗျာ၊ ဒါကတော့ အသံစမ်းသပ်မှု ဖြစ်ပါတယ်။",
+    },
+    {
+        "id": "fr-FR-VivienneMultilingualNeural",
+        "key": "ခင်",
+        "name": "Khin (ခင်)",
+        "burmese_name": "ခင်",
+        "provider": "microsoft",
+        "gender": "female",
+        "tier": "free",
+        "popular": False,
+        "styles": ["Elegant", "Narrative"],
+        "sample_text": "မင်္ဂလာပါရှင်၊ နားဆင်သူအားလုံး စိတ်ချမ်းသာကြပါစေ။",
+    },
+    {
+        "id": "de-DE-FlorianMultilingualNeural",
+        "key": "Microsoft Burmese Male Aung",
+        "name": "Aung (အောင်)",
+        "burmese_name": "အောင်",
+        "provider": "microsoft",
+        "gender": "male",
+        "tier": "free",
+        "popular": False,
+        "styles": ["Authoritative", "News"],
+        "sample_text": "မင်္ဂလာပါ၊ နောက်ဆုံးရ အချက်အလက်တွေကို တင်ဆက်ပေးသွားပါမယ်။",
+    },
+    {
+        "id": "en-US-AndrewMultilingualNeural",
+        "key": "အန်းဒရူး",
+        "name": "Andrew (အန်းဒရူး)",
+        "burmese_name": "အန်းဒရူး",
+        "provider": "microsoft",
+        "gender": "male",
+        "tier": "free",
+        "popular": False,
+        "styles": ["Warm", "Conversational"],
+        "sample_text": "မင်္ဂလာပါ၊ ဒီနေ့မှာတော့ ထူးခြားတဲ့ ဇာတ်လမ်းတစ်ပုဒ်ကို ပြောပြပေးမှာပါ။",
+    },
+    {
+        "id": "en-US-AvaMultilingualNeural",
+        "key": "အေဗာ",
+        "name": "Ava (အေဗာ)",
+        "burmese_name": "အေဗာ",
+        "provider": "microsoft",
+        "gender": "female",
+        "tier": "free",
+        "popular": False,
+        "styles": ["Expressive", "Caring"],
+        "sample_text": "မင်္ဂလာပါရှင်၊ အားလုံးပဲ ကြိုဆိုပါတယ်။",
+    },
+    {
+        "id": "en-US-BrianMultilingualNeural",
+        "key": "ဘရိုင်ယန်",
+        "name": "Brian (ဘရိုင်ယန်)",
+        "burmese_name": "ဘရိုင်ယန်",
+        "provider": "microsoft",
+        "gender": "male",
+        "tier": "free",
+        "popular": False,
+        "styles": ["Natural", "Casual"],
+        "sample_text": "မင်္ဂလာပါ၊ အတူတူ ကြည့်ရှုလိုက်ကြရအောင်။",
+    },
+    {
+        "id": "en-US-EmmaMultilingualNeural",
+        "key": "အမ်မာ",
+        "name": "Emma (အမ်မာ)",
+        "burmese_name": "အမ်မာ",
+        "provider": "microsoft",
+        "gender": "female",
+        "tier": "free",
+        "popular": False,
+        "styles": ["Cheerful", "Clear"],
+        "sample_text": "မင်္ဂလာပါရှင်၊ ဒီဗီဒီယိုလေးကို သဘောကျမယ်လို့ မျှော်လင့်ပါတယ်။",
+    },
+    {
+        "id": "ko-KR-HyunsuMultilingualNeural",
+        "key": "ဟွန်ဆူး",
+        "name": "Hyunsu (ဟွန်ဆူး)",
+        "burmese_name": "ဟွန်ဆူး",
+        "provider": "microsoft",
+        "gender": "male",
+        "tier": "free",
+        "popular": False,
+        "styles": ["Clear", "Professional"],
+        "sample_text": "မင်္ဂလာပါ၊ ဇာတ်လမ်းအကျဉ်းချုပ်ကို စတင်တင်ဆက်ပေးပါမယ်။",
+    },
+    {
+        "id": "pt-BR-ThalitaMultilingualNeural",
+        "key": "သလီတာ",
+        "name": "Thalita (သလီတာ)",
+        "burmese_name": "သလီတာ",
+        "provider": "microsoft",
+        "gender": "female",
+        "tier": "free",
+        "popular": False,
+        "styles": ["Warm", "Friendly"],
+        "sample_text": "မင်္ဂလာပါရှင်၊ ဆက်လက်ရှုစားပေးကြပါဦး။",
+    },
+    {
+        "id": "th-TH-PremwadeeNeural",
+        "key": "Thai Female Premwadee",
+        "name": "Premwadee (Thai Neural)",
+        "burmese_name": "Premwadee (ထိုင်း)",
+        "provider": "microsoft",
+        "gender": "female",
+        "tier": "free",
+        "popular": False,
+        "styles": ["Thai Native", "Clear"],
+        "sample_text": "สวัสดีค่ะ ยินดีต้อนรับสู่สตูดิโอพากย์เสียง AI",
+    },
+]
+
+# === 30 GOOGLE GEMINI TTS VOICES (Unlocked for $0 via Multi-Key Pool!) ===
+_GEMINI_VOICE_SPECS = [
+    ("Kore", "ကြယ်စင်", "Kyae Sin (ကြယ်စင်)", "female", True, ["Warm", "Storyteller"]),
+    ("Zephyr", "လှလှ", "Hla Hla (လှလှ)", "female", True, ["Cheerful", "Bright"]),
+    ("Puck", "ဆန်းသစ်", "San Thit (ဆန်းသစ်)", "male", True, ["Dynamic", "Recap Pro"]),
+    ("Charon", "မြတ်သူ", "Myat Thu (မြတ်သူ)", "male", True, ["Deep", "Cinema Narrator"]),
+    ("Fenrir", "မိုးသူ", "Moe Thu (မိုးသူ)", "male", True, ["Calm", "Authoritative"]),
+    ("Leda", "ချယ်ရီ", "Cherry (ချယ်ရီ)", "female", False, ["Energetic", "Bright"]),
+    ("Orus", "မင်းမင်း", "Min Min (မင်းမင်း)", "male", False, ["Warm", "Narrative"]),
+    ("Aoede", "နှင်းနှင်း", "Hnin Hnin (နှင်းနှင်း)", "female", False, ["Soft", "Elegant"]),
+    ("Callirrhoe", "စံပယ်", "Sabae (စံပယ်)", "female", False, ["Fresh", "Youthful"]),
+    ("Autonoe", "သဇင်", "Thazin (သဇင်)", "female", False, ["Smooth", "Gentle"]),
+    ("Enceladus", "အေးမွန်", "Aye Mon (အေးမွန်)", "male", False, ["Calm", "Steady"]),
+    ("Iapetus", "သော်တာ", "Thaw Tar (သော်တာ)", "male", False, ["Deep", "Resonant"]),
+    ("Umbriel", "ကောင်းကောင်း", "Kaung Kaung (ကောင်းကောင်း)", "male", False, ["Friendly", "Warm"]),
+    ("Algieba", "မြင့်မြတ်", "Myint Myat (မြင့်မြတ်)", "male", False, ["Professional", "Clear"]),
+    ("Despina", "အိမွန်", "Ei Mon (အိမွန်)", "female", False, ["Sweet", "Soft"]),
+    ("Erinome", "မော်မော်", "Maw Maw (မော်မော်)", "female", False, ["Energetic", "Bright"]),
+    ("Algenib", "မင်းအောင်", "Min Aung (မင်းအောင်)", "male", False, ["Bold", "Dynamic"]),
+    ("Rasalgethi", "စိုးသူ", "Soe Thu (စိုးသူ)", "male", False, ["Warm", "Natural"]),
+    ("Laomedeia", "သိမ့်သိမ့်", "Theint Theint (သိမ့်သိမ့်)", "female", False, ["Crisp", "Cheerful"]),
+    ("Achernar", "သီတာ", "Thidar (သီတာ)", "female", False, ["Melodic", "Soft"]),
+    ("Alnilam", "မောင်မောင်", "Maung Maung (မောင်မောင်)", "male", False, ["Friendly", "Warm"]),
+    ("Schedar", "ချမ်းသာ", "Chan Thar (ချမ်းသာ)", "female", False, ["Elegant", "Smooth"]),
+    ("Gacrux", "အိမ့်", "Eaint (အိမ့်)", "female", False, ["Gentle", "Soft"]),
+    ("Pulcherrima", "ယုယု", "Yu Yu (ယုယု)", "female", False, ["Sweet", "Youthful"]),
+    ("Achird", "နိုင်မင်း", "Naing Min (နိုင်မင်း)", "male", False, ["Authoritative", "Clear"]),
+    ("Zubenelgenubi", "နေတိုး", "Nay Toe (နေတိုး)", "male", False, ["Energetic", "Bold"]),
+    ("Vindemiatrix", "ပန်းအိ", "Pan Ei (ပန်းအိ)", "female", False, ["Bright", "Cheerful"]),
+    ("Sadachbia", "နေမင်း", "Nay Min (နေမင်း)", "male", False, ["Deep", "Resonant"]),
+    ("Sadaltager", "နောင်နောင်", "Naung Naung (နောင်နောင်)", "male", False, ["Warm", "Friendly"]),
+    ("Sulafat", "မိသူ", "Mi Thu (မိသူ)", "female", False, ["Soft", "Gentle"]),
+]
+
+for en_id, my_key, display_name, gender, is_pop, styles in _GEMINI_VOICE_SPECS:
+    VOICE_CATALOG.append(
+        {
+            "id": en_id,
+            "key": my_key,
+            "name": f"{display_name} · Gemini {en_id}",
+            "burmese_name": my_key,
+            "provider": "gemini",
+            "gender": gender,
+            "tier": "pro_unlocked",
+            "popular": is_pop,
+            "styles": styles,
+            "sample_text": "မင်္ဂလာပါ၊ ဒါကတော့ ဂျမ်မနိုင်း အေအိုင် အသံမော်ဒယ် စမ်းသပ်မှု ဖြစ်ပါတယ်။",
+        }
+    )
+
+
+def resolve_voice(voice_identifier: str) -> Dict[str, Any]:
+    """Resolves a voice by id, Burmese key, or display name."""
+    if not voice_identifier:
+        return VOICE_CATALOG[0]
+    q = voice_identifier.strip().lower()
+    for v in VOICE_CATALOG:
+        if (
+            v["id"].lower() == q
+            or v["key"].lower() == q
+            or v["name"].lower() == q
+            or v["burmese_name"].lower() == q
+        ):
+            return v
+    return VOICE_CATALOG[0]

@@ -797,9 +797,16 @@
     }
 
     async function triggerSubmitJob() {
+      const url = document.getElementById('videoUrl').value.trim();
+      const video_file_path = document.getElementById('uploadedVideoPath').value.trim();
+      if (!url && !video_file_path) {
+        alert("Please enter a video URL or upload a video file first.");
+        return;
+      }
+
       const payload = {
-        url: document.getElementById('videoUrl').value.trim(),
-        video_file_path: document.getElementById('uploadedVideoPath').value.trim(),
+        url: url,
+        video_file_path: video_file_path,
         processing_mode: CURRENT_MODE,
         aspect_ratio: document.getElementById('aspectRatio').value,
         target_language: document.getElementById('targetLanguage').value,
@@ -827,18 +834,134 @@
         flip_video: document.getElementById('flipVideo').checked
       };
 
-      document.getElementById('jobLinksRow').style.display = 'none';
-      document.getElementById('jobStatusText').textContent = 'SYS > Submitting job to AlphaFlow Engine...';
-      document.getElementById('jobProgressBar').style.width = '5%';
+      const statusEl = document.getElementById('jobStatusText');
+      const percentEl = document.getElementById('jobPercentText');
+      const barEl = document.getElementById('jobProgressBar');
+      const linksRow = document.getElementById('jobLinksRow');
+      linksRow.style.display = 'none';
 
-      const res = await fetch('/api/video/process', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (data.job_id) {
-        pollJob(data.job_id);
+      function updateUI(percent, text) {
+        percentEl.textContent = `${percent}%`;
+        barEl.style.width = `${percent}%`;
+        statusEl.textContent = `SYS > ${text}`;
+      }
+
+      try {
+        // STEP 1: PREPARE SOURCE VIDEO (10% -> 25%)
+        updateUI(10, 'Step 1/5: Downloading source video & probing metadata with anti-bot bypass...');
+        const prepRes = await fetch('/api/video/step/prepare', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!prepRes.ok) {
+          const err = await prepRes.json().catch(() => ({ detail: prepRes.statusText }));
+          throw new Error(err.detail || 'Failed to prepare video');
+        }
+        const prepData = await prepRes.json();
+        const jobId = prepData.job_id;
+        updateUI(25, `Source ready (${prepData.duration.toFixed(1)}s) · Smart Route: ${prepData.routed_tts_model}`);
+        document.getElementById('durationRouteIndicator').textContent =
+          `Duration: ${prepData.duration.toFixed(1)}s · Active TTS: ${prepData.routed_tts_model}`;
+
+        // STEP 2: TRANSCRIBE AUDIO (25% -> 50%)
+        updateUI(35, 'Step 2/5: Extracting audio & transcribing via Groq Whisper Large v3 Turbo...');
+        const transRes = await fetch('/api/video/step/transcribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ job_id: jobId })
+        });
+        if (!transRes.ok) {
+          const err = await transRes.json().catch(() => ({ detail: transRes.statusText }));
+          throw new Error(err.detail || 'Transcription failed');
+        }
+        const transData = await transRes.json();
+        updateUI(50, `Audio transcribed (${transData.transcript_data?.segments?.length || 0} segments)`);
+
+        // STEP 3: GENERATE RECAP SCRIPT & SRT (50% -> 75%)
+        updateUI(60, 'Step 3/5: Generating viral Burmese recap script & subtitle sync via LLM...');
+        const scriptRes = await fetch('/api/video/step/script', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            job_id: jobId,
+            transcript_data: transData.transcript_data,
+            duration_sec: prepData.duration,
+            processing_mode: payload.processing_mode,
+            target_language: payload.target_language,
+            script_style: payload.script_style,
+            voice_tone: payload.voice_tone,
+            custom_script: payload.custom_script
+          })
+        });
+        if (!scriptRes.ok) {
+          const err = await scriptRes.json().catch(() => ({ detail: scriptRes.statusText }));
+          throw new Error(err.detail || 'Script generation failed');
+        }
+        const scriptData = await scriptRes.json();
+        if (scriptData.script?.full_narration) {
+          document.getElementById('generatedScriptOutput').value = scriptData.script.full_narration;
+        }
+        updateUI(75, `Script generated (${scriptData.script?.captions?.length || 0} subtitle lines)`);
+
+        // STEP 4: SYNTHESIZE SPEECH VIA SMART GEMINI / EDGE TTS (75% -> 90%)
+        let ttsModelUsed = "subtitle_only";
+        if (payload.processing_mode !== 'subtitle') {
+          updateUI(80, `Step 4/5: Synthesizing voice (${payload.voice}) via ${prepData.routed_tts_model}...`);
+          const ttsRes = await fetch('/api/video/step/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              job_id: jobId,
+              script: scriptData.script,
+              voice: payload.voice,
+              duration_sec: prepData.duration,
+              gemini_tts_model: payload.gemini_tts_model,
+              voice_speed: payload.voice_speed,
+              audio_enhancement: payload.audio_enhancement
+            })
+          });
+          if (!ttsRes.ok) {
+            const err = await ttsRes.json().catch(() => ({ detail: ttsRes.statusText }));
+            throw new Error(err.detail || 'Voice synthesis failed');
+          }
+          const ttsData = await ttsRes.json();
+          ttsModelUsed = ttsData.model_used;
+          updateUI(90, `Voice synthesized via ${ttsModelUsed}`);
+          document.getElementById('durationRouteIndicator').textContent =
+            `Duration: ${prepData.duration.toFixed(1)}s · Active TTS: ${ttsModelUsed}`;
+        }
+
+        // STEP 5: RENDER FINAL VIDEO & TELEGRAM STORAGE PUSH (90% -> 100%)
+        updateUI(92, 'Step 5/5: Rendering final video with Anti-ContentID filtergraph & Telegram CDN...');
+        const renderRes = await fetch('/api/video/step/render', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            job_id: jobId,
+            ...payload
+          })
+        });
+        if (!renderRes.ok) {
+          const err = await renderRes.json().catch(() => ({ detail: renderRes.statusText }));
+          throw new Error(err.detail || 'Rendering failed');
+        }
+        const renderData = await renderRes.json();
+        updateUI(100, 'Completed! Video rendered & archived.');
+
+        const player = document.getElementById('studioVideoPlayer');
+        player.src = renderData.download_url + '?t=' + Date.now();
+        player.play().catch(() => {});
+
+        linksRow.style.display = 'flex';
+        document.getElementById('downloadMp4Link').href = renderData.download_url;
+        document.getElementById('downloadSrtLink').href = renderData.srt_url;
+        loadVoicesAndKeys();
+
+      } catch (err) {
+        console.error(err);
+        updateUI(barEl.style.width.replace('%','') || 10, `Error: ${err.message}`);
+        alert(`AlphaFlow Error: ${err.message}`);
       }
     }
 

@@ -356,6 +356,279 @@ async def _run_job_pipeline(job_id: str, params: Dict[str, Any]) -> None:
         )
 
 
+# ============================================================================
+# 4. STEP-BY-STEP PIPELINE ENDPOINTS (Zero Freeze on Serverless / Vercel)
+# ============================================================================
+
+@app.post("/api/video/step/prepare")
+async def step_prepare_video(request: Request) -> Dict[str, Any]:
+    params = await request.json()
+    job_id = params.get("job_id") or f"job_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+    job_dir = JOBS_DIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    if params.get("video_file_path") and Path(params["video_file_path"]).exists():
+        src_path = Path(params["video_file_path"])
+        if src_path.parent != job_dir:
+            target_src = job_dir / f"source{src_path.suffix}"
+            shutil.copy2(src_path, target_src)
+            src_path = target_src
+        meta = await asyncio.to_thread(probe_media_info, src_path)
+        media_info = {"video_path": str(src_path), "title": src_path.stem, **meta}
+    elif params.get("url"):
+        info = await asyncio.to_thread(download_source_video, params["url"], job_dir)
+        media_info = {
+            "video_path": str(info["video_path"]),
+            "title": info.get("title", "Video"),
+            "duration": float(info.get("duration") or 0.0),
+            "width": int(info.get("width") or 1280),
+            "height": int(info.get("height") or 720),
+        }
+    else:
+        raise HTTPException(status_code=400, detail="Neither video URL nor uploaded video file was provided.")
+
+    duration_sec = float(media_info.get("duration") or 0.0)
+    routed_models = key_pool.resolve_gemini_tts_models(
+        video_duration_sec=duration_sec,
+        requested_model=params.get("gemini_tts_model"),
+    )
+
+    JOBS[job_id] = {
+        "job_id": job_id,
+        "status": "processing",
+        "step": 1,
+        "progress": 25,
+        "log": f"Source ready ({duration_sec:.1f}s) · Smart Route: {routed_models[0]}",
+        "duration": duration_sec,
+        "routed_tts_model": routed_models[0],
+        "media_info": media_info,
+        "created_at": int(time.time()),
+        "params": params,
+    }
+    _save_jobs()
+
+    return {
+        "success": True,
+        "job_id": job_id,
+        "media_info": media_info,
+        "duration": duration_sec,
+        "title": media_info["title"],
+        "routed_tts_model": routed_models[0],
+        "progress": 25,
+    }
+
+
+@app.post("/api/video/step/transcribe")
+async def step_transcribe_audio(request: Request) -> Dict[str, Any]:
+    params = await request.json()
+    job_id = params.get("job_id")
+    if not job_id or job_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job_dir = JOBS_DIR / job_id
+    media_info = JOBS[job_id].get("media_info") or {}
+    video_path_str = params.get("video_path") or media_info.get("video_path")
+    video_path = Path(video_path_str) if video_path_str else (job_dir / "source.mp4")
+    if not video_path.exists():
+        vids = [p for p in job_dir.glob("source.*") if p.suffix.lower() not in (".json", ".part", ".ytdl")]
+        if vids:
+            video_path = vids[0]
+        else:
+            raise HTTPException(status_code=400, detail="Source media file not found for transcription")
+
+    transcript_data = await asyncio.to_thread(
+        transcribe_with_groq_whisper,
+        video_path,
+        job_dir,
+    )
+
+    JOBS[job_id]["step"] = 2
+    JOBS[job_id]["progress"] = 50
+    JOBS[job_id]["log"] = f"Transcribed ({len(transcript_data.get('segments', []))} segments, language: {transcript_data.get('language')})"
+    JOBS[job_id]["transcript_data"] = transcript_data
+    _save_jobs()
+
+    return {
+        "success": True,
+        "job_id": job_id,
+        "transcript_data": transcript_data,
+        "progress": 50,
+    }
+
+
+@app.post("/api/video/step/script")
+async def step_generate_script(request: Request) -> Dict[str, Any]:
+    params = await request.json()
+    job_id = params.get("job_id")
+    if not job_id or job_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job_dir = JOBS_DIR / job_id
+    transcript_data = params.get("transcript_data") or JOBS[job_id].get("transcript_data") or {"text": "", "segments": []}
+    duration_sec = float(params.get("duration_sec") or JOBS[job_id].get("duration") or 30.0)
+
+    if params.get("custom_script") and str(params["custom_script"]).strip():
+        full_narration = str(params["custom_script"]).strip()
+        clauses = [c.strip() for c in full_narration.replace("။", "။\n").splitlines() if c.strip()]
+        slot = max(2.0, duration_sec / max(1, len(clauses)))
+        script_result = {
+            "viral_title": params.get("title", "AlphaFlow Recap")[:25],
+            "hook_line": clauses[0] if clauses else "",
+            "full_narration": full_narration,
+            "captions": [
+                {"start": round(i * slot, 2), "end": round(min(duration_sec, (i + 1) * slot), 2), "text": c}
+                for i, c in enumerate(clauses)
+            ],
+        }
+    else:
+        script_result = await asyncio.to_thread(
+            generate_recap_or_dub_script,
+            transcript_data,
+            duration_sec,
+            params.get("processing_mode", "recap"),
+            params.get("target_language", "Burmese (Myanmar Language)"),
+            params.get("script_style", "Engaging Story"),
+            params.get("voice_tone", "Energetic"),
+        )
+
+    srt_path = job_dir / "captions.srt"
+    await asyncio.to_thread(write_srt_file, script_result.get("captions", []), srt_path)
+
+    JOBS[job_id]["step"] = 3
+    JOBS[job_id]["progress"] = 75
+    JOBS[job_id]["log"] = f"Script generated ({len(script_result.get('captions', []))} subtitle lines)"
+    JOBS[job_id]["script"] = script_result
+    _save_jobs()
+
+    return {
+        "success": True,
+        "job_id": job_id,
+        "script": script_result,
+        "srt_url": f"/api/video/subtitle/{job_id}/download",
+        "progress": 75,
+    }
+
+
+@app.post("/api/video/step/tts")
+async def step_synthesize_tts(request: Request) -> Dict[str, Any]:
+    params = await request.json()
+    job_id = params.get("job_id")
+    if not job_id or job_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job_dir = JOBS_DIR / job_id
+    script = params.get("script") or JOBS[job_id].get("script") or {}
+    text = script.get("full_narration") or params.get("text", "")
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Narration text is empty")
+
+    duration_sec = float(params.get("duration_sec") or JOBS[job_id].get("duration") or 0.0)
+
+    tts_res = await synthesize_voice(
+        text=text,
+        voice_identifier=params.get("voice", "my-MM-ThihaNeural"),
+        work_dir=job_dir,
+        video_duration_sec=duration_sec,
+        requested_gemini_model=params.get("gemini_tts_model", "auto_duration"),
+        speed=float(params.get("voice_speed", 1.0)),
+        pitch_hz=int(params.get("pitch_hz") or params.get("microsoft_pitch") or 0),
+        pause_mode=params.get("pause_mode") or params.get("microsoft_pause_mode") or "remove",
+        enhancement=params.get("audio_enhancement", "none"),
+    )
+
+    JOBS[job_id]["step"] = 4
+    JOBS[job_id]["progress"] = 90
+    JOBS[job_id]["log"] = f"Voice synthesized via {tts_res['model_used']}"
+    JOBS[job_id]["voice_audio_path"] = str(tts_res["audio_path"])
+    JOBS[job_id]["tts_model_used"] = tts_res["model_used"]
+    _save_jobs()
+
+    return {
+        "success": True,
+        "job_id": job_id,
+        "model_used": tts_res["model_used"],
+        "voice_audio_url": f"/api/video/voice-audio/{job_id}",
+        "progress": 90,
+    }
+
+
+@app.post("/api/video/step/render")
+async def step_render_video(request: Request) -> Dict[str, Any]:
+    params = await request.json()
+    job_id = params.get("job_id")
+    if not job_id or job_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job_dir = JOBS_DIR / job_id
+    media_info = JOBS[job_id].get("media_info") or {}
+    vids = [p for p in job_dir.glob("source.*") if p.suffix.lower() not in (".json", ".part", ".mp3", ".wav", ".ytdl")]
+    source_video = vids[0] if vids else (job_dir / "source.mp4")
+
+    audio_path = job_dir / "final_voice.wav"
+    if not audio_path.exists():
+        candidates = list(job_dir.glob("*.wav")) + list(job_dir.glob("*.mp3"))
+        audio_path = candidates[0] if candidates else None
+
+    srt_path = job_dir / "captions.srt"
+    out_video = job_dir / "final_output.mp4"
+
+    render_options = {**JOBS[job_id].get("params", {}), **params}
+
+    await asyncio.to_thread(
+        render_final_video,
+        source_video,
+        audio_path,
+        srt_path,
+        out_video,
+        render_options,
+        media_info,
+    )
+
+    tg_result = {"pushed": False}
+    if render_options.get("push_telegram", True):
+        script = JOBS[job_id].get("script") or {}
+        duration_sec = float(JOBS[job_id].get("duration") or 0.0)
+        tts_model = JOBS[job_id].get("tts_model_used", "AlphaFlow TTS")
+        caption = (
+            f"🎬 {script.get('viral_title', 'AlphaFlow Render')}\n"
+            f"🎙 Voice: {render_options.get('voice')} ({tts_model})\n"
+            f"⏱ Duration: {duration_sec:.1f}s"
+        )
+        tg_result = await asyncio.to_thread(push_to_telegram_storage, out_video, caption)
+
+    JOBS[job_id]["status"] = "completed"
+    JOBS[job_id]["step"] = 5
+    JOBS[job_id]["progress"] = 100
+    JOBS[job_id]["log"] = "Completed! Video rendered & archived."
+    JOBS[job_id]["download_url"] = f"/api/video/local-preview/{job_id}"
+    JOBS[job_id]["srt_url"] = f"/api/video/subtitle/{job_id}/download"
+    JOBS[job_id]["telegram"] = tg_result
+    _save_jobs()
+
+    return {
+        "success": True,
+        "job_id": job_id,
+        "status": "completed",
+        "download_url": f"/api/video/local-preview/{job_id}",
+        "srt_url": f"/api/video/subtitle/{job_id}/download",
+        "telegram": tg_result,
+        "progress": 100,
+    }
+
+
+@app.get("/api/video/voice-audio/{job_id}")
+async def stream_job_voice_audio(job_id: str) -> FileResponse:
+    job_dir = JOBS_DIR / job_id
+    for name in ["final_voice.wav", "final_voice.mp3", "tts_raw.wav", "tts_raw.mp3"]:
+        p = job_dir / name
+        if p.exists():
+            return FileResponse(str(p), media_type="audio/wav")
+    candidates = list(job_dir.glob("*.wav")) + list(job_dir.glob("*.mp3"))
+    if candidates:
+        return FileResponse(str(candidates[0]), media_type="audio/wav")
+    raise HTTPException(status_code=404, detail="Audio file not found")
+
+
 @app.post("/api/video/process")
 async def start_video_processing(request: Request) -> Dict[str, Any]:
     content_type = request.headers.get("content-type", "")

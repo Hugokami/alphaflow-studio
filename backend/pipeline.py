@@ -1,7 +1,9 @@
 import asyncio
 import json
 import re
+import shutil
 import subprocess
+import sys
 import time
 import urllib.request
 import urllib.error
@@ -18,83 +20,143 @@ JOBS_DIR.mkdir(parents=True, exist_ok=True)
 BURMESE_SYLLABLE_RE = re.compile(r"([က-ဪa-zA-Z0-9]+[်္ျြွှ]*)")
 
 
+def get_ffmpeg_exe() -> str:
+    """Returns path to system ffmpeg binary or bundled imageio-ffmpeg static executable."""
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        pass
+    return "ffmpeg"
+
+
 def count_burmese_syllables(text: str) -> int:
     return max(1, len(BURMESE_SYLLABLE_RE.findall(text or "")))
 
 
 def probe_media_info(video_path: Path) -> Dict[str, Any]:
-    """Extracts duration, width, height, and fps via ffprobe."""
-    cmd = [
-        "ffprobe",
-        "-v",
-        "error",
-        "-show_entries",
-        "format=duration:stream=width,height,codec_type",
-        "-of",
-        "json",
-        str(video_path),
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    try:
-        data = json.loads(res.stdout or "{}")
-    except Exception:
-        data = {}
-    duration = float(data.get("format", {}).get("duration") or 0.0)
-    width, height = 1280, 720
-    for s in data.get("streams", []):
-        if s.get("codec_type") == "video" and s.get("width") and s.get("height"):
-            width = int(s["width"])
-            height = int(s["height"])
-            break
-    return {"duration": duration, "width": width, "height": height}
-
-
-def download_source_video(url: str, dest_dir: Path) -> Dict[str, Any]:
-    """Downloads video from YouTube, TikTok, FB, IG, or direct URL using yt-dlp."""
-    out_tmpl = str(dest_dir / "source.%(ext)s")
-    cmd = [
-        "python",
-        "-m",
-        "yt_dlp",
-        "--no-playlist",
-        "-f",
-        "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best",
-        "--merge-output-format",
-        "mp4",
-        "--write-info-json",
-        "-o",
-        out_tmpl,
-        url,
-    ]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    mp4_files = list(dest_dir.glob("source*.mp4"))
-    if not mp4_files:
-        all_vids = [p for p in dest_dir.glob("source.*") if p.suffix.lower() not in (".json", ".part")]
-        if not all_vids:
-            raise RuntimeError("Failed to download video from URL")
-        video_path = all_vids[0]
-    else:
-        video_path = mp4_files[0]
-
-    title = video_path.stem
-    info_files = list(dest_dir.glob("source*.info.json"))
-    if info_files:
+    """Extracts duration, width, height, and fps via ffprobe or ffmpeg -i fallback."""
+    ffprobe_bin = shutil.which("ffprobe")
+    if ffprobe_bin:
+        cmd = [
+            ffprobe_bin,
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration:stream=width,height,codec_type",
+            "-of",
+            "json",
+            str(video_path),
+        ]
         try:
-            info = json.loads(info_files[0].read_text(encoding="utf-8", errors="replace"))
-            title = info.get("title") or title
+            res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            data = json.loads(res.stdout or "{}")
+            duration = float(data.get("format", {}).get("duration") or 0.0)
+            width, height = 1280, 720
+            for s in data.get("streams", []):
+                if s.get("codec_type") == "video" and s.get("width") and s.get("height"):
+                    width = int(s["width"])
+                    height = int(s["height"])
+                    break
+            if duration > 0:
+                return {"duration": duration, "width": width, "height": height}
         except Exception:
             pass
 
+    # Fallback to ffmpeg -i output parsing
+    ffmpeg_bin = get_ffmpeg_exe()
+    try:
+        cmd = [ffmpeg_bin, "-i", str(video_path)]
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        out = (res.stderr or "") + " " + (res.stdout or "")
+        dur_match = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.?\d*)", out)
+        duration = 0.0
+        if dur_match:
+            duration = float(dur_match.group(1)) * 3600 + float(dur_match.group(2)) * 60 + float(dur_match.group(3))
+        res_match = re.search(r"(\d{3,5})x(\d{3,5})", out)
+        width, height = 1280, 720
+        if res_match:
+            width = int(res_match.group(1))
+            height = int(res_match.group(2))
+        return {"duration": duration, "width": width, "height": height}
+    except Exception:
+        return {"duration": 30.0, "width": 1080, "height": 1920}
+
+
+def download_source_video(url: str, dest_dir: Path) -> Dict[str, Any]:
+    """Downloads video or extracts audio stream from URL using yt-dlp Python library with cloud anti-bot bypass."""
+    import yt_dlp
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    out_tmpl = str(dest_dir / "source.%(ext)s")
+    ffmpeg_bin = get_ffmpeg_exe()
+
+    ydl_opts = {
+        "outtmpl": out_tmpl,
+        "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best",
+        "merge_output_format": "mp4",
+        "no_playlist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "ffmpeg_location": ffmpeg_bin,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "ios", "tv", "web_embedded"]
+            }
+        },
+    }
+
+    duration = 0.0
+    title = "Source Video"
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            title = info.get("title") or title
+            duration = float(info.get("duration") or 0.0)
+    except Exception as e:
+        # Fallback to audio-only stream download if full 720p muxing failed
+        try:
+            audio_opts = {
+                "outtmpl": str(dest_dir / "source.%(ext)s"),
+                "format": "bestaudio/best",
+                "no_playlist": True,
+                "quiet": True,
+                "no_warnings": True,
+                "ffmpeg_location": ffmpeg_bin,
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["android", "ios", "tv", "web_embedded"]
+                    }
+                },
+            }
+            with yt_dlp.YoutubeDL(audio_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                title = info.get("title") or title
+                duration = float(info.get("duration") or 0.0)
+        except Exception as e2:
+            raise RuntimeError(f"yt-dlp video error: {str(e)[:160]} | audio fallback: {str(e2)[:160]}")
+
+    candidates = [p for p in dest_dir.glob("source.*") if p.suffix.lower() not in (".json", ".part", ".ytdl")]
+    if not candidates:
+        raise RuntimeError("No media file found after yt-dlp download.")
+    video_path = candidates[0]
+
     meta = probe_media_info(video_path)
+    if duration > 0 and (meta.get("duration") or 0) <= 0:
+        meta["duration"] = duration
     return {"video_path": video_path, "title": title, **meta}
 
 
 def transcribe_with_groq_whisper(video_path: Path, work_dir: Path) -> Dict[str, Any]:
     """Extracts 16kHz mono audio and transcribes with Groq whisper-large-v3-turbo using key failover."""
     audio_mp3 = work_dir / "extracted_speech.mp3"
+    ffmpeg_bin = get_ffmpeg_exe()
     subprocess.run(
         [
-            "ffmpeg",
+            ffmpeg_bin,
             "-y",
             "-i",
             str(video_path),
@@ -373,7 +435,8 @@ def render_final_video(
     vf_chain = ",".join(v_filters) if v_filters else "null"
 
     # Build Audio Mix
-    cmd = ["ffmpeg", "-y", "-i", str(source_video)]
+    ffmpeg_bin = get_ffmpeg_exe()
+    cmd = [ffmpeg_bin, "-y", "-i", str(source_video)]
     if voice_audio and voice_audio.exists():
         cmd.extend(["-i", str(voice_audio)])
         sfx_bg = options.get("sfx_only", True)
@@ -413,7 +476,48 @@ def render_final_video(
             str(out_video),
         ]
     )
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as err:
+        # If hardsub subtitles filter failed (e.g. libass missing in static ffmpeg build), retry without hardsub filter
+        if "subtitles=" in vf_chain:
+            fallback_v_filters = [f for f in v_filters if not f.startswith("subtitles=")]
+            fallback_vf = ",".join(fallback_v_filters) if fallback_v_filters else "null"
+            fallback_cmd = [ffmpeg_bin, "-y", "-i", str(source_video)]
+            if voice_audio and voice_audio.exists():
+                fallback_cmd.extend(["-i", str(voice_audio)])
+                fallback_cmd.extend(
+                    [
+                        "-filter_complex",
+                        f"[0:v]{fallback_vf}[vout];{af_complex}",
+                        "-map",
+                        "[vout]",
+                        "-map",
+                        "[aout]",
+                    ]
+                )
+            else:
+                fallback_cmd.extend(["-vf", fallback_vf, "-map", "0:v:0", "-map", "0:a?"])
+            fallback_cmd.extend(
+                [
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-crf",
+                    "21",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "192k",
+                    "-movflags",
+                    "+faststart",
+                    str(out_video),
+                ]
+            )
+            subprocess.run(fallback_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            raise err
     return out_video
 
 

@@ -26,3 +26,5 @@ venv/
 node_modules/
 .wrangler/
 .DS_Store
+
+.vercel

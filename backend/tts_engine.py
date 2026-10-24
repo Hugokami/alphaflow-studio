@@ -143,6 +143,19 @@ async def synthesize_edge_tts_async(
     return out_path
 
 
+def get_ffmpeg_exe() -> Optional[str]:
+    """Returns path to system ffmpeg binary or bundled imageio-ffmpeg static executable."""
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        pass
+    return None
+
+
 def postprocess_voice_audio(
     in_audio: Path,
     out_audio: Path,
@@ -157,8 +170,8 @@ def postprocess_voice_audio(
       - `studio`     (Version 2 Clear): Balanced broadcast compressor + dynamic normalizer
       - `none`       (Version 3 Warm):  Gentle warm low-pass + smooth normalization
     """
-    # If ffmpeg is not available on PATH (e.g. serverless Vercel environment), pass through raw audio cleanly
-    if not shutil.which("ffmpeg"):
+    ffmpeg_bin = get_ffmpeg_exe()
+    if not ffmpeg_bin:
         shutil.copy2(in_audio, out_audio)
         return out_audio
 
@@ -186,7 +199,7 @@ def postprocess_voice_audio(
 
     filter_chain = ",".join(filters)
     cmd = [
-        "ffmpeg",
+        ffmpeg_bin,
         "-y",
         "-i",
         str(in_audio),
@@ -198,7 +211,10 @@ def postprocess_voice_audio(
         "2",
         str(out_audio),
     ]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        shutil.copy2(in_audio, out_audio)
     return out_audio
 
 

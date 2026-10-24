@@ -207,8 +207,8 @@ def postprocess_voice_audio(
         filter_chain,
         "-ar",
         "44100",
-        "-ac",
-        "2",
+        "-b:a",
+        "96k",
         str(out_audio),
     ]
     try:
@@ -235,7 +235,7 @@ async def synthesize_voice(
     """
     voice_spec = resolve_voice(voice_identifier)
     raw_path = work_dir / f"tts_raw_{voice_spec['id']}.wav"
-    final_path = work_dir / f"tts_final_{voice_spec['id']}.wav"
+    final_path = work_dir / f"tts_final_{voice_spec['id']}.mp3"
     model_used = "edge-tts"
 
     if voice_spec["provider"] == "gemini":
@@ -266,8 +266,16 @@ async def synthesize_voice(
         pause_mode,
         enhancement,
     )
+
+    canonical_voice = work_dir / "final_voice.mp3"
+    try:
+        if final_path.exists():
+            shutil.copy2(final_path, canonical_voice)
+    except Exception:
+        pass
+
     return {
-        "audio_path": final_path,
+        "audio_path": canonical_voice if canonical_voice.exists() else final_path,
         "voice": voice_spec,
         "model_used": model_used,
     }

@@ -566,7 +566,9 @@ async def step_synthesize_tts(request: Request) -> Dict[str, Any]:
     voice_audio_base64 = ""
     if audio_path and Path(audio_path).exists():
         try:
-            voice_audio_base64 = base64.b64encode(Path(audio_path).read_bytes()).decode("ascii")
+            raw_bytes = Path(audio_path).read_bytes()
+            if len(raw_bytes) < 2500000:
+                voice_audio_base64 = base64.b64encode(raw_bytes).decode("ascii")
         except Exception as b64_err:
             print("Base64 encode error:", b64_err)
 

@@ -928,7 +928,7 @@
           }
           const ttsData = await ttsRes.json();
           ttsModelUsed = ttsData.model_used;
-          voiceAudioBase64 = ttsData.voice_audio_base64 || "";
+          voiceAudioBase64 = (ttsData.voice_audio_base64 && ttsData.voice_audio_base64.length < 2500000) ? ttsData.voice_audio_base64 : "";
           updateUI(90, `Voice synthesized via ${ttsModelUsed}`);
           document.getElementById('durationRouteIndicator').textContent =
             `Duration: ${prepData.duration.toFixed(1)}s · Active TTS: ${ttsModelUsed}`;

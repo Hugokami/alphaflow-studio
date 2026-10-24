@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import subprocess
+import shutil
 import urllib.request
 import urllib.error
 import wave
@@ -156,6 +157,11 @@ def postprocess_voice_audio(
       - `studio`     (Version 2 Clear): Balanced broadcast compressor + dynamic normalizer
       - `none`       (Version 3 Warm):  Gentle warm low-pass + smooth normalization
     """
+    # If ffmpeg is not available on PATH (e.g. serverless Vercel environment), pass through raw audio cleanly
+    if not shutil.which("ffmpeg"):
+        shutil.copy2(in_audio, out_audio)
+        return out_audio
+
     filters = []
 
     # 1. Pause removal (strips unnatural TTS inter-sentence pauses)

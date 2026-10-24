@@ -433,20 +433,25 @@ async def step_transcribe_audio(request: Request) -> Dict[str, Any]:
 
     job_dir = JOBS_DIR / job_id
     media_info = JOBS[job_id].get("media_info") or {}
-    video_path_str = params.get("video_path") or media_info.get("video_path")
-    video_path = Path(video_path_str) if video_path_str else (job_dir / "source.mp4")
-    if not video_path.exists():
-        vids = [p for p in job_dir.glob("source.*") if p.suffix.lower() not in (".json", ".part", ".ytdl")]
-        if vids:
-            video_path = vids[0]
-        else:
-            raise HTTPException(status_code=400, detail="Source media file not found for transcription")
+    pre_transcript = job_dir / "transcript.json"
 
-    transcript_data = await asyncio.to_thread(
-        transcribe_with_groq_whisper,
-        video_path,
-        job_dir,
-    )
+    if pre_transcript.exists():
+        transcript_data = json.loads(pre_transcript.read_text(encoding="utf-8"))
+    else:
+        video_path_str = params.get("video_path") or media_info.get("video_path")
+        video_path = Path(video_path_str) if video_path_str else (job_dir / "source.mp4")
+        if not video_path.exists():
+            vids = [p for p in job_dir.glob("source.*") if p.suffix.lower() not in (".json", ".part", ".ytdl")]
+            if vids:
+                video_path = vids[0]
+            else:
+                raise HTTPException(status_code=400, detail="Source media file not found for transcription")
+
+        transcript_data = await asyncio.to_thread(
+            transcribe_with_groq_whisper,
+            video_path,
+            job_dir,
+        )
 
     JOBS[job_id]["step"] = 2
     JOBS[job_id]["progress"] = 50

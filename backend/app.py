@@ -339,13 +339,21 @@ async def _run_job_pipeline(job_id: str, params: Dict[str, Any]) -> None:
             routed_tts_model=routed_models[0],
         )
 
-        # STEP 1: Transcription via Groq Whisper Large v3 Turbo
-        transcript_data = await asyncio.to_thread(
-            transcribe_with_groq_whisper,
-            media_info["video_path"],
-            job_dir,
-        )
-        _update(2, 50, "Generating syllable-aligned Burmese script via Multi-Key Gemini / Groq LLM...")
+        # STEP 1: Transcription via Groq Whisper Large v3 Turbo (or bypass if custom script provided)
+        if params.get("custom_script") and str(params["custom_script"]).strip():
+            transcript_data = {"text": "", "segments": []}
+            _update(2, 50, "Using custom script (bypassing audio transcription)...")
+        else:
+            try:
+                transcript_data = await asyncio.to_thread(
+                    transcribe_with_groq_whisper,
+                    media_info["video_path"],
+                    job_dir,
+                )
+            except Exception as stt_err:
+                print("Transcription fallback notice:", stt_err)
+                transcript_data = {"text": "Video scene and visual storyline recap.", "segments": []}
+            _update(2, 50, "Generating syllable-aligned Burmese script via Multi-Key Gemini / Groq LLM...")
 
         # STEP 2: Recap / Dubbing Script Generation
         if params.get("custom_script") and str(params["custom_script"]).strip():

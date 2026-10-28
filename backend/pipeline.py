@@ -316,33 +316,42 @@ def transcribe_with_groq_whisper(video_path: Path, work_dir: Path) -> Dict[str, 
             "If the audio has no speech or only background music/silence, return: "
             '{"text": "", "segments": []}'
         )
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={api_key}"
-        payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {"inlineData": {"mimeType": "audio/mp3", "data": audio_b64}},
-                        {"text": prompt},
-                    ]
+        last_err = None
+        for m in ("gemini-3.5-flash", "gemini-3.8-flash", "gemini-flash-latest"):
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={api_key}"
+                payload = {
+                    "contents": [
+                        {
+                            "parts": [
+                                {"inlineData": {"mimeType": "audio/mp3", "data": audio_b64}},
+                                {"text": prompt},
+                            ]
+                        }
+                    ],
+                    "generationConfig": {
+                        "temperature": 0.1,
+                        "responseMimeType": "application/json",
+                    },
                 }
-            ],
-            "generationConfig": {
-                "temperature": 0.1,
-                "responseMimeType": "application/json",
-            },
-        }
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-        txt = body["candidates"][0]["content"]["parts"][0]["text"].strip()
-        if txt.startswith("```"):
-            txt = re.sub(r"^```(?:json)?\s*|\s*```$", "", txt, flags=re.S).strip()
-        return json.loads(txt)
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=25) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+                txt = body["candidates"][0]["content"]["parts"][0]["text"].strip()
+                if txt.startswith("```"):
+                    txt = re.sub(r"^```(?:json)?\s*|\s*```$", "", txt, flags=re.S).strip()
+                return json.loads(txt)
+            except Exception as e:
+                last_err = e
+                continue
+        if last_err:
+            raise last_err
+        return {"text": "", "segments": []}
 
     if key_pool.has_active_keys("groq"):
         try:
@@ -350,7 +359,11 @@ def transcribe_with_groq_whisper(video_path: Path, work_dir: Path) -> Dict[str, 
         except Exception as groq_err:
             print("Groq transcription notice, attempting Gemini fallback:", groq_err)
 
-    return key_pool.execute_with_failover("gemini", _call_gemini_stt)
+    try:
+        return key_pool.execute_with_failover("gemini", _call_gemini_stt)
+    except Exception as gem_stt_err:
+        print("Gemini STT fallback notice (falling back to visual narrative):", gem_stt_err)
+        return {"text": "", "segments": []}
 
 
 def generate_recap_or_dub_script(
@@ -450,7 +463,7 @@ CRITICAL RULES:
 
     def _call_gemini_llm(api_key: str) -> Dict[str, Any]:
         last_err = None
-        for gem_model in ("gemini-3.8-flash", "gemini-flash-latest"):
+        for gem_model in ("gemini-3.5-flash", "gemini-3.8-flash", "gemini-flash-latest"):
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{gem_model}:generateContent?key={api_key}"
                 payload = {
@@ -674,7 +687,7 @@ Return ONLY valid JSON matching this schema:
 }}
 """
     def _call_gemini_viral(api_key: str) -> Dict[str, Any]:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.5, "responseMimeType": "application/json"}
@@ -761,7 +774,7 @@ Return ONLY JSON:
 {"has_subtitles": true, "box": {"x": 10, "y": 82, "w": 80, "h": 12}}
 """
         def _call_gemini_vision(api_key: str) -> Dict[str, Any]:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
             payload = {
                 "contents": [
                     {

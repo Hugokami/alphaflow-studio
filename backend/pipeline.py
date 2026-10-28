@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import re
 import shutil
@@ -306,7 +307,50 @@ def transcribe_with_groq_whisper(video_path: Path, work_dir: Path) -> Dict[str, 
         with urllib.request.urlopen(req, timeout=60) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
-    return key_pool.execute_with_failover("groq", _call_groq_stt)
+    def _call_gemini_stt(api_key: str) -> Dict[str, Any]:
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        prompt = (
+            "Listen to this audio carefully and transcribe the spoken words verbatim. "
+            "Return a valid JSON object matching this schema:\n"
+            '{"text": "Full transcribed speech text here", "segments": [{"start": 0.0, "end": 2.5, "text": "Segment text"}]}\n'
+            "If the audio has no speech or only background music/silence, return: "
+            '{"text": "", "segments": []}'
+        )
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={api_key}"
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"inlineData": {"mimeType": "audio/mp3", "data": audio_b64}},
+                        {"text": prompt},
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.1,
+                "responseMimeType": "application/json",
+            },
+        }
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        txt = body["candidates"][0]["content"]["parts"][0]["text"].strip()
+        if txt.startswith("```"):
+            txt = re.sub(r"^```(?:json)?\s*|\s*```$", "", txt, flags=re.S).strip()
+        return json.loads(txt)
+
+    if key_pool.has_active_keys("groq"):
+        try:
+            return key_pool.execute_with_failover("groq", _call_groq_stt)
+        except Exception as groq_err:
+            print("Groq transcription notice, attempting Gemini fallback:", groq_err)
+
+    return key_pool.execute_with_failover("gemini", _call_gemini_stt)
 
 
 def generate_recap_or_dub_script(
@@ -394,7 +438,7 @@ CRITICAL RULES:
 
     def _call_gemini_llm(api_key: str) -> Dict[str, Any]:
         last_err = None
-        for gem_model in ("gemini-3.8-flash", "gemini-2.5-flash"):
+        for gem_model in ("gemini-3.8-flash", "gemini-flash-latest"):
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{gem_model}:generateContent?key={api_key}"
                 payload = {
@@ -618,7 +662,7 @@ Return ONLY valid JSON matching this schema:
 }}
 """
     def _call_gemini_viral(api_key: str) -> Dict[str, Any]:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={api_key}"
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.5, "responseMimeType": "application/json"}
@@ -705,7 +749,7 @@ Return ONLY JSON:
 {"has_subtitles": true, "box": {"x": 10, "y": 82, "w": 80, "h": 12}}
 """
         def _call_gemini_vision(api_key: str) -> Dict[str, Any]:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={api_key}"
             payload = {
                 "contents": [
                     {
@@ -782,7 +826,7 @@ def render_final_video(
 
     # 1. Anti-ContentID Crop / Zoom (use_zoom)
     if options.get("use_zoom"):
-        v_filters.append("crop=w=in_w*0.88:h=in_h*0.88:(in_w-out_w)/2:(in_h-out_h)/2")
+        v_filters.append("crop=w=in_w*0.88:h=in_h*0.88:x=(in_w-out_w)/2:y=(in_h-out_h)/2")
 
     # 2. Horizontal Flip (flip_video)
     if options.get("flip_video"):

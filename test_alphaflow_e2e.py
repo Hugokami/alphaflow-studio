@@ -24,7 +24,9 @@ async def main() -> None:
     status = key_pool.get_public_status()
     print(f"Loaded Gemini Keys: {len(status['gemini_keys'])} | Groq Keys: {len(status['groq_keys'])}")
     assert len(status["gemini_keys"]) >= 4, "Expected at least 4 Google AI Studio keys"
-    assert len(status["groq_keys"]) >= 1, "Expected at least 1 Groq key"
+    # Groq keys optional when Gemini audio transcription fallback is active
+    if status.get("groq_keys"):
+        print(f"Groq Keys present: {len(status['groq_keys'])}")
     assert len(VOICE_CATALOG) == 45, f"Expected 45 voices, got {len(VOICE_CATALOG)}"
 
     # Verify Smart Duration Routing rules:

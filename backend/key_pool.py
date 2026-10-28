@@ -80,17 +80,41 @@ class MultiKeyPoolManager:
             except Exception:
                 pass
 
+        # Seed from google_ai_studio_api_keys if present in store
+        studio_keys = self.state.get("google_ai_studio_api_keys") or []
+        for idx, k in enumerate(studio_keys):
+            if k and isinstance(k, str) and k.strip():
+                self._ensure_key_entry("gemini", k.strip(), label=f"Google AI Studio #{idx + 1}")
+
         # Ensure env keys are seeded into the pool without duplicates
-        env_gemini = [
-            k.strip()
-            for k in (os.environ.get("GEMINI_API_KEYS") or self.env_vars.get("GEMINI_API_KEYS", "")).split(",")
-            if k.strip()
-        ]
+        env_gemini = []
+        raw_pool = os.environ.get("GEMINI_API_KEY_POOL") or self.env_vars.get("GEMINI_API_KEY_POOL", "")
+        if raw_pool:
+            try:
+                parsed = json.loads(raw_pool)
+                if isinstance(parsed, list):
+                    env_gemini.extend([str(x).strip() for x in parsed if str(x).strip()])
+            except Exception:
+                pass
+
+        raw_csv = os.environ.get("GEMINI_API_KEYS") or self.env_vars.get("GEMINI_API_KEYS", "")
+        if raw_csv:
+            env_gemini.extend([k.strip() for k in raw_csv.split(",") if k.strip()])
+
+        for i in range(1, 20):
+            k = os.environ.get(f"GEMINI_API_KEY_{i}") or self.env_vars.get(f"GEMINI_API_KEY_{i}", "")
+            if k and k.strip():
+                env_gemini.append(k.strip())
+
         env_groq = [
             k.strip()
             for k in (os.environ.get("GROQ_API_KEYS") or self.env_vars.get("GROQ_API_KEYS", "")).split(",")
             if k.strip()
         ]
+        for i in range(1, 10):
+            k = os.environ.get(f"GROQ_API_KEY_{i}") or self.env_vars.get(f"GROQ_API_KEY_{i}", "")
+            if k and k.strip():
+                env_groq.append(k.strip())
 
         for idx, k in enumerate(env_gemini):
             self._ensure_key_entry("gemini", k, label=f"Google AI Studio #{idx + 1}")
@@ -241,6 +265,11 @@ class MultiKeyPoolManager:
                     "chat_id": self.state["telegram"].get("chat_id", ""),
                 },
             }
+
+    def has_active_keys(self, provider: str) -> bool:
+        bucket = "gemini_keys" if provider == "gemini" else "groq_keys"
+        with self._lock:
+            return len(self.state.get(bucket, [])) > 0
 
     def execute_with_failover(
         self,

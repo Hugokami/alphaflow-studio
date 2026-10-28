@@ -412,6 +412,33 @@ async def _run_job_pipeline(job_id: str, params: Dict[str, Any]) -> None:
             media_info,
         )
 
+        # STEP 4.5: Generate 3 Thumbnails & Viral Social Package
+        thumbs_res = []
+        social_pkg = {}
+        try:
+            raw_thumbs = await asyncio.to_thread(
+                generate_thumbnail_slices, out_video, job_dir / "thumbnails", duration_sec
+            )
+            thumbs_res = [
+                {
+                    "index": t["index"],
+                    "url": f"/api/video/thumbnail/{job_id}/{t['index']}",
+                    "timestamp": t["timestamp"],
+                    "size": t["size"],
+                    "path": str(t.get("path", "")),
+                }
+                for t in raw_thumbs
+            ]
+            social_pkg = await asyncio.to_thread(
+                generate_viral_social_package,
+                script_result,
+                duration_sec,
+                media_info.get("title", "LTstudio Recap"),
+                params.get("target_language", "Burmese"),
+            )
+        except Exception as pkg_err:
+            print("Auto social package error:", pkg_err)
+
         # STEP 5: Optional Telegram Storage Push (@hyugoustoragebot)
         tg_result = {"pushed": False}
         if params.get("push_telegram", True):
@@ -433,6 +460,8 @@ async def _run_job_pipeline(job_id: str, params: Dict[str, Any]) -> None:
             script=script_result,
             tts_model_used=tts_model_used,
             telegram=tg_result,
+            thumbnails=thumbs_res,
+            social_package=social_pkg,
         )
     except Exception as exc:
         _update(

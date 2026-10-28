@@ -1,6 +1,15 @@
 @echo off
-title LTstudio AI (Local FastAPI + FFmpeg Engine)
+title LTstudio AI
 cd /d "%~dp0"
-echo Starting LTstudio AI on http://127.0.0.1:8090 ...
-python run_studio.py
-pause
+
+where python >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Python not found in PATH! Please ensure Python is installed.
+    pause
+    exit /b 1
+)
+
+python ltstudio_cli.py %*
+if %ERRORLEVEL% neq 0 (
+    pause
+)

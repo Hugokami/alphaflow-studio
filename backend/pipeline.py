@@ -184,55 +184,96 @@ def _download_youtube_cloud_fallback(vid: str, dest_dir: Path, ffmpeg_bin: str) 
     }
 
 
+def resolve_canonical_url(url: str) -> str:
+    """Follows HTTP redirects (e.g. vt.tiktok.com, vm.tiktok.com, youtu.be) using mobile headers."""
+    clean_url = url.strip()
+    url_lower = clean_url.lower()
+    if any(s in url_lower for s in ("vt.tiktok.com", "vm.tiktok.com", "youtu.be", "tinyurl.com", "/t/")):
+        try:
+            req = urllib.request.Request(
+                clean_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
+                }
+            )
+            with urllib.request.urlopen(req, timeout=8.0) as resp:
+                final_url = resp.geturl()
+                if final_url and final_url != clean_url:
+                    return final_url
+        except Exception as e:
+            print("[*] [Pipeline] Notice resolving shortlink:", e)
+    return clean_url
+
+
 def download_source_video(url: str, dest_dir: Path) -> Dict[str, Any]:
-    """Downloads genuine moving video or extracts stream from URL using yt-dlp with anti-bot bypass."""
+    """Downloads genuine moving video or extracts stream from URL using yt-dlp with TLS impersonation & anti-bot bypass."""
     import yt_dlp
 
     dest_dir.mkdir(parents=True, exist_ok=True)
     out_tmpl = str(dest_dir / "source.%(ext)s")
     ffmpeg_bin = get_ffmpeg_exe()
-    vid_id = extract_youtube_id(url)
 
-    # Primary: Fast pre-muxed mp4 (format 18 or 360p/720p) with mweb/android client bypass
-    ydl_opts = {
+    # 1. Expand short links (vt.tiktok.com, vm.tiktok.com, youtu.be)
+    canonical_url = resolve_canonical_url(url)
+    vid_id = extract_youtube_id(canonical_url)
+    is_tiktok = "tiktok.com" in canonical_url.lower()
+
+    # 2. Configure platform-optimized options
+    ydl_opts: Dict[str, Any] = {
         "outtmpl": out_tmpl,
-        "format": "18/best[ext=mp4][height<=720]/best[height<=720]/best",
         "no_playlist": True,
         "quiet": True,
         "no_warnings": True,
         "ffmpeg_location": ffmpeg_bin,
-        "extractor_args": {
+    }
+
+    if is_tiktok:
+        # TikTok requires pre-muxed mp4 and genuine browser TLS impersonation
+        ydl_opts["format"] = "best[ext=mp4]/best"
+        ydl_opts["http_headers"] = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Referer": "https://www.tiktok.com/",
+        }
+    else:
+        # YouTube uses mobile web/android bypass client
+        ydl_opts["format"] = "18/best[ext=mp4][height<=720]/best[height<=720]/best"
+        ydl_opts["extractor_args"] = {
             "youtube": {
                 "player_client": ["mweb", "android"]
             }
-        },
-    }
+        }
 
     duration = 0.0
     title = "Source Video"
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+            info = ydl.extract_info(canonical_url, download=True)
             title = info.get("title") or title
             duration = float(info.get("duration") or 0.0)
     except Exception as e:
-        # Fallback 1: Try alternate player clients (android, ios, web)
+        # Fallback 1: Try alternate client settings
         try:
-            fallback_opts = {
+            fallback_opts: Dict[str, Any] = {
                 "outtmpl": str(dest_dir / "source.%(ext)s"),
-                "format": "18/best[height<=720]/bestaudio/best",
+                "format": "bestaudio/best" if not is_tiktok else "best",
                 "no_playlist": True,
                 "quiet": True,
                 "no_warnings": True,
                 "ffmpeg_location": ffmpeg_bin,
-                "extractor_args": {
+            }
+            if is_tiktok:
+                fallback_opts["http_headers"] = {
+                    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+                    "Referer": "https://www.tiktok.com/",
+                }
+            else:
+                fallback_opts["extractor_args"] = {
                     "youtube": {
                         "player_client": ["android", "ios", "web"]
                     }
-                },
-            }
+                }
             with yt_dlp.YoutubeDL(fallback_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
+                info = ydl.extract_info(canonical_url, download=True)
                 title = info.get("title") or title
                 duration = float(info.get("duration") or 0.0)
         except Exception as e2:

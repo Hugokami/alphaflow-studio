@@ -530,25 +530,53 @@
     /* On-Canvas Subtitle Placement Guide */
     .on-canvas-sub-guide {
       position: absolute;
-      left: 8%;
-      right: 8%;
+      left: 6%;
+      right: 6%;
       pointer-events: auto;
-      cursor: ns-resize;
+      cursor: move;
       user-select: none;
       text-align: center;
-      padding: 6px 12px;
-      border-top: 1px dashed rgba(245, 158, 11, 0.6);
-      border-bottom: 1px dashed rgba(245, 158, 11, 0.6);
-      background: rgba(245, 158, 11, 0.08);
-      border-radius: 6px;
+      padding: 6px 10px;
+      border: 1px dashed rgba(245, 158, 11, 0.7);
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(4px);
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+      z-index: 12;
+      transition: border-color 0.15s ease;
+    }
+    .on-canvas-sub-guide:hover {
+      border-color: rgba(245, 158, 11, 1);
+    }
+    .sub-guide-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      padding-bottom: 2px;
+      border-bottom: 1px solid rgba(245, 158, 11, 0.25);
     }
     .sub-guide-badge {
       font-family: 'JetBrains Mono', monospace;
       font-size: 0.62rem;
       color: var(--amber);
       font-weight: 700;
-      margin-bottom: 2px;
       letter-spacing: 0.05em;
+    }
+    .sub-guide-close-btn {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 0.85rem;
+      padding: 0 4px;
+      line-height: 1;
+      border-radius: 3px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .sub-guide-close-btn:hover {
+      color: #ef4444;
+      background: rgba(239, 68, 68, 0.15);
     }
     .sub-guide-text {
       font-family: 'Myanmar Text', 'Padauk', sans-serif;
@@ -557,6 +585,38 @@
       color: #FFFFFF;
       text-shadow: -1.5px -1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000, 1.5px 1.5px 0 #000, 0 3px 6px rgba(0,0,0,0.9);
       line-height: 1.4;
+      outline: none;
+      cursor: text;
+      user-select: text;
+      padding: 2px 4px;
+      border-radius: 4px;
+      transition: background 0.15s ease;
+    }
+    .sub-guide-text:focus {
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px dotted rgba(245, 158, 11, 0.8);
+    }
+
+    /* Live dynamic subtitle display over video player */
+    .live-subtitle-display {
+      position: absolute;
+      left: 5%;
+      right: 5%;
+      pointer-events: none;
+      text-align: center;
+      z-index: 10;
+      transition: opacity 0.1s ease;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .live-sub-inner {
+      display: inline-block;
+      max-width: 95%;
+      font-family: 'Myanmar Text', 'Padauk', sans-serif;
+      font-weight: 700;
+      line-height: 1.35;
+      padding: 3px 8px;
+      border-radius: 4px;
     }
 
     /* 1-Click Viral Social Growth Package */
@@ -718,6 +778,7 @@
         <div class="form-group">
           <label class="form-label">Processing Mode</label>
           <div class="segmented-row">
+            <button type="button" class="seg-btn" data-mode="assemble" onclick="selectMode('assemble')">🎬 Assemble Mode</button>
             <button type="button" class="seg-btn" data-mode="subtitle" onclick="selectMode('subtitle')">Subtitle Mode</button>
             <button type="button" class="seg-btn active" data-mode="recap" onclick="selectMode('recap')">Recap Mode</button>
             <button type="button" class="seg-btn" data-mode="dubbing" onclick="selectMode('dubbing')">Dubbing Mode</button>
@@ -740,6 +801,43 @@
           </select>
           <div id="recapStrategyDesc" style="font-size:0.73rem; color:var(--text-secondary); margin-top:6px; line-height:1.4;">
             ✅ <b>Full-Length Mode:</b> The original video is <b>100% preserved from start to finish</b>. AI crafts a rich scene-by-scene narration covering 0:00 to end without trimming or shortening the video.
+          </div>
+        </div>
+
+        <!-- Dedicated Assemble Mode (Video + SRT) Options -->
+        <div id="assembleModeOptions" class="form-group" style="display:none; background:var(--bg-canvas); padding:14px; border-radius:10px; border:1px solid rgba(59,130,246,0.35);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <span style="font-weight:700; color:#60A5FA; display:flex; align-items:center; gap:6px;">
+              <span>🎬 Assemble Mode (Video + SRT)</span>
+              <span class="micro-badge" style="background:rgba(59,130,246,0.15); color:#60A5FA; border-color:rgba(59,130,246,0.35);">ZERO-TOKEN FAST MERGE</span>
+            </span>
+            <span id="srtStatusBadge" class="micro-badge" style="background:rgba(255,255,255,0.06); color:var(--text-muted);">No SRT Loaded</span>
+          </div>
+          <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:10px; line-height:1.4;">
+            Instantly assemble and burn your pre-made subtitles into the uploaded video. Bypasses AI speech recognition and TTS completely — high-speed FFmpeg burn-in in seconds.
+          </div>
+          
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <label class="form-label" style="font-size:0.75rem;">Upload Subtitle File (.srt, .vtt, .ass, .txt)</label>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <input type="file" id="srtFileInput" accept=".srt,.vtt,.ass,.txt" style="display:none;" onchange="handleSrtFileUpload(event)" />
+              <button type="button" class="pill-btn primary" onclick="document.getElementById('srtFileInput').click()" style="padding:6px 14px; font-size:0.8rem;">
+                📂 Choose Subtitle File (.srt / .vtt)
+              </button>
+              <button type="button" class="pill-btn" onclick="clearUploadedSrt()" id="clearSrtBtn" style="display:none; padding:6px 10px; font-size:0.78rem;">
+                ✕ Clear
+              </button>
+              <span id="srtFileNameLabel" style="font-size:0.75rem; color:var(--text-primary); font-family:'JetBrains Mono',monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:200px;"></span>
+            </div>
+
+            <!-- Quick SRT text preview and editor -->
+            <div id="srtPreviewContainer" style="display:none; margin-top:6px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <span style="font-size:0.72rem; color:var(--text-muted);">Subtitle Content &amp; Timing Preview (<span id="srtLinesCount">0</span> lines)</span>
+                <span style="font-size:0.7rem; color:var(--amber);">Editable Text</span>
+              </div>
+              <textarea id="srtTextEditor" rows="5" style="width:100%; font-family:'JetBrains Mono',monospace; font-size:0.75rem; line-height:1.35; padding:8px; background:rgba(0,0,0,0.3); border:1px solid var(--border-hairline); border-radius:6px; color:#E2E8F0;" oninput="onSrtEditorChanged()"></textarea>
+            </div>
           </div>
         </div>
 
@@ -1036,6 +1134,10 @@
           <button type="button" id="monitorBlurBtn" class="step-tab" onclick="toggleBlurMask()" style="border:1px solid var(--border-hairline); padding:5px 10px; font-size:0.75rem;">
             ➕ Add Blur Mask
           </button>
+          <!-- Subtitle Box Toggle -->
+          <button type="button" id="monitorSubGuideBtn" class="step-tab" onclick="toggleSubtitleGuide()" style="border:1px solid var(--border-hairline); padding:5px 10px; font-size:0.75rem;" title="Show/Hide Subtitle Placement Guide">
+            💬 Subtitle Box
+          </button>
           <button type="button" class="step-tab" onclick="refreshCurrentPreview()" style="border:1px solid var(--border-hairline); padding:5px 10px; font-size:0.75rem;" title="Reload current preview">
             🔄 Refresh
           </button>
@@ -1047,7 +1149,10 @@
 
       <div class="preview-stage aspect-9-16" id="previewStageWrapper">
         <video id="studioVideoPlayer" controls playsinline></video>
-        
+
+        <!-- Live Subtitles Pop-up Display during Video Playback -->
+        <div id="liveSubtitleDisplay" class="live-subtitle-display" style="display:none;"></div>
+
         <!-- Interactive On-Canvas Overlay Layer -->
         <div class="canvas-overlay-layer" id="canvasOverlayLayer">
           <!-- Draggable / Resizable Blur Box (Optional, hidden by default) -->
@@ -1062,10 +1167,14 @@
             <div class="resize-handle handle-sw" data-handle="sw"></div>
           </div>
 
-          <!-- Draggable Subtitle Vertical Guide -->
-          <div id="onCanvasSubtitleGuide" class="on-canvas-sub-guide" style="top:85%;">
-            <div class="sub-guide-badge" id="subGuideBadge">↕ SUBTITLES POSITION (85%)</div>
-            <div class="sub-guide-text" id="onCanvasSubText">ဒီဇာတ်လမ်းကတော့ မဖြစ်မနေ ကြည့်သင့်တဲ့ ဇာတ်ကားကောင်းတစ်ခု ဖြစ်ပါတယ်</div>
+          <!-- Draggable & Editable Subtitle Placement Guide (Hidden by default, dismissible) -->
+          <div id="onCanvasSubtitleGuide" class="on-canvas-sub-guide" style="display:none; top:85%;">
+            <div class="sub-guide-header">
+              <span class="sub-guide-badge" id="subGuideBadge">↕ SUBTITLES POSITION (85%)</span>
+              <span style="font-size:0.62rem; color:var(--text-muted); opacity:0.85; margin-left:auto; margin-right:8px;">(Editable Text)</span>
+              <button type="button" class="sub-guide-close-btn" onclick="toggleSubtitleGuide(false, event)" title="Close Subtitle Box">✕</button>
+            </div>
+            <div class="sub-guide-text" id="onCanvasSubText" contenteditable="true" spellcheck="false" title="Click to edit preview subtitle text">ဒီဇာတ်လမ်းကတော့ မဖြစ်မနေ ကြည့်သင့်တဲ့ ဇာတ်ကားကောင်းတစ်ခု ဖြစ်ပါတယ်</div>
           </div>
         </div>
       </div>
@@ -1209,6 +1318,179 @@ Part 2 ဆက်ကြည့်ချင်ရင် Like & Follow လုပ်�
   <script>
     let ALL_VOICES = [];
     let CURRENT_MODE = 'recap';
+    let ACTIVE_CAPTIONS = [];
+    let CURRENT_UPLOADED_SRT_PATH = "";
+    let CURRENT_RAW_SRT_TEXT = "";
+
+    function parseSrtOrVtt(text) {
+      if (!text) return [];
+      const timePat = /(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})/;
+      const blocks = text.trim().split(/\n\s*\n/);
+      const captions = [];
+      for (const block of blocks) {
+        const lines = block.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        if (!lines.length) continue;
+        let timeIdx = -1;
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes('-->')) {
+            timeIdx = i;
+            break;
+          }
+        }
+        if (timeIdx === -1) continue;
+        const m = lines[timeIdx].match(timePat);
+        if (!m) continue;
+        const h1 = parseInt(m[1], 10), m1 = parseInt(m[2], 10), s1 = parseInt(m[3], 10), ms1 = parseInt(m[4], 10);
+        const h2 = parseInt(m[5], 10), m2 = parseInt(m[6], 10), s2 = parseInt(m[7], 10), ms2 = parseInt(m[8], 10);
+        const start = h1 * 3600 + m1 * 60 + s1 + ms1 / 1000.0;
+        const end = h2 * 3600 + m2 * 60 + s2 + ms2 / 1000.0;
+        const captionText = lines.slice(timeIdx + 1).join(" ");
+        if (captionText) {
+          captions.push({
+            start: parseFloat(start.toFixed(2)),
+            end: parseFloat(end.toFixed(2)),
+            text: captionText
+          });
+        }
+      }
+      return captions;
+    }
+
+    function toggleSubtitleGuide(force, e) {
+      if (e) e.stopPropagation();
+      const guide = document.getElementById('onCanvasSubtitleGuide');
+      const btn = document.getElementById('monitorSubGuideBtn');
+      if (!guide) return;
+      const show = (force !== undefined) ? !!force : (guide.style.display === 'none' || guide.style.display === '');
+      guide.style.display = show ? 'block' : 'none';
+      if (btn) {
+        if (show) {
+          btn.style.background = 'rgba(245, 158, 11, 0.2)';
+          btn.style.borderColor = 'var(--amber)';
+          btn.style.color = 'var(--amber)';
+        } else {
+          btn.style.background = 'transparent';
+          btn.style.borderColor = 'var(--border-hairline)';
+          btn.style.color = 'var(--text-secondary)';
+        }
+      }
+    }
+
+    function updateLiveSubtitleDisplay() {
+      const player = document.getElementById('studioVideoPlayer');
+      const liveEl = document.getElementById('liveSubtitleDisplay');
+      if (!player || !liveEl) return;
+      const subEnabled = document.getElementById('subtitleEnabled') ? document.getElementById('subtitleEnabled').checked : true;
+      if (!subEnabled || !ACTIVE_CAPTIONS || !ACTIVE_CAPTIONS.length) {
+        liveEl.style.display = 'none';
+        return;
+      }
+      const curTime = player.currentTime;
+      const active = ACTIVE_CAPTIONS.find(c => curTime >= c.start && curTime <= c.end);
+      if (active && active.text) {
+        const fontSz = document.getElementById('subtitleFontSize') ? document.getElementById('subtitleFontSize').value : 55;
+        const color = document.getElementById('subtitleColor') ? document.getElementById('subtitleColor').value : 'white';
+        const style = document.getElementById('subtitleStyle') ? document.getElementById('subtitleStyle').value : 'outline';
+        const subY = document.getElementById('subtitleY') ? document.getElementById('subtitleY').value : 85;
+
+        let hexColor = '#FFFFFF';
+        if (color === 'yellow') hexColor = '#FDE047';
+        else if (color === 'cyan') hexColor = '#38BDF8';
+
+        const inner = document.createElement('span');
+        inner.className = 'live-sub-inner';
+        inner.textContent = active.text;
+        inner.style.color = hexColor;
+        inner.style.fontSize = Math.max(12, Math.min(22, Math.round(fontSz / 2.8))) + 'px';
+
+        if (style === 'box') {
+          inner.style.background = 'rgba(0, 0, 0, 0.85)';
+          inner.style.padding = '3px 8px';
+          inner.style.borderRadius = '4px';
+          inner.style.textShadow = 'none';
+        } else {
+          inner.style.background = 'transparent';
+          inner.style.padding = '0';
+          inner.style.textShadow = '0 2px 4px #000, 0 0 2px #000';
+        }
+
+        liveEl.innerHTML = '';
+        liveEl.appendChild(inner);
+        liveEl.style.top = subY + '%';
+        liveEl.style.display = 'block';
+      } else {
+        liveEl.style.display = 'none';
+      }
+    }
+
+    async function handleSrtFileUpload(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const statusEl = document.getElementById('jobStatusText');
+      statusEl.textContent = `SYS > Reading subtitle file ${file.name}...`;
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const raw = e.target.result;
+        CURRENT_RAW_SRT_TEXT = raw;
+        const parsed = parseSrtOrVtt(raw);
+        ACTIVE_CAPTIONS = parsed;
+
+        document.getElementById('srtFileNameLabel').textContent = file.name;
+        document.getElementById('srtStatusBadge').textContent = `Loaded (${parsed.length} lines)`;
+        document.getElementById('srtStatusBadge').style.color = 'var(--emerald)';
+        document.getElementById('clearSrtBtn').style.display = 'inline-block';
+        document.getElementById('srtPreviewContainer').style.display = 'block';
+        document.getElementById('srtLinesCount').textContent = parsed.length;
+        document.getElementById('srtTextEditor').value = raw;
+
+        // Auto-upload to backend endpoint
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          if (CURRENT_PREPARED_JOB) {
+            formData.append('job_id', CURRENT_PREPARED_JOB);
+          }
+          const res = await fetch('/api/video/upload-srt', {
+            method: 'POST',
+            body: formData
+          });
+          const data = await res.json();
+          if (data.success) {
+            CURRENT_UPLOADED_SRT_PATH = data.srt_path;
+            if (data.job_id && !CURRENT_PREPARED_JOB) CURRENT_PREPARED_JOB = data.job_id;
+            statusEl.textContent = `SYS > Subtitles verified: ${data.caption_count} lines loaded. Play video to test!`;
+          }
+        } catch (err) {
+          console.warn('SRT upload warning:', err);
+          statusEl.textContent = `SYS > Subtitles loaded locally (${parsed.length} lines).`;
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function onSrtEditorChanged() {
+      const raw = document.getElementById('srtTextEditor').value;
+      CURRENT_RAW_SRT_TEXT = raw;
+      const parsed = parseSrtOrVtt(raw);
+      ACTIVE_CAPTIONS = parsed;
+      document.getElementById('srtLinesCount').textContent = parsed.length;
+    }
+
+    function clearUploadedSrt() {
+      ACTIVE_CAPTIONS = [];
+      CURRENT_UPLOADED_SRT_PATH = "";
+      CURRENT_RAW_SRT_TEXT = "";
+      document.getElementById('srtFileInput').value = '';
+      document.getElementById('srtFileNameLabel').textContent = '';
+      document.getElementById('srtStatusBadge').textContent = 'No SRT Loaded';
+      document.getElementById('srtStatusBadge').style.color = 'var(--text-muted)';
+      document.getElementById('clearSrtBtn').style.display = 'none';
+      document.getElementById('srtPreviewContainer').style.display = 'none';
+      document.getElementById('srtTextEditor').value = '';
+      const liveEl = document.getElementById('liveSubtitleDisplay');
+      if (liveEl) liveEl.style.display = 'none';
+    }
     let ACTIVE_POLL_TIMER = null;
 
     function switchStep(stepNum) {
@@ -1226,6 +1508,27 @@ Part 2 ဆက်ကြည့်ချင်ရင် Like & Follow လုပ်�
         btn.classList.toggle('active', btn.dataset.mode === mode);
       });
       document.getElementById('activeModeBadge').textContent = mode.toUpperCase() + ' MODE';
+
+      const recapOpts = document.getElementById('recapModeOptions');
+      const assembleOpts = document.getElementById('assembleModeOptions');
+      const mainBtn = document.querySelector('button[onclick="triggerSubmitJob()"].primary');
+
+      if (mode === 'assemble') {
+        if (recapOpts) recapOpts.style.display = 'none';
+        if (assembleOpts) assembleOpts.style.display = 'block';
+        if (mainBtn) mainBtn.innerHTML = '🎬 Assemble Video &amp; Subtitles';
+        const subCheck = document.getElementById('subtitleEnabled');
+        if (subCheck) subCheck.checked = true;
+      } else if (mode === 'recap') {
+        if (recapOpts) recapOpts.style.display = 'block';
+        if (assembleOpts) assembleOpts.style.display = 'none';
+        if (mainBtn) mainBtn.innerHTML = '🚀 Start Render';
+      } else {
+        if (recapOpts) recapOpts.style.display = 'none';
+        if (assembleOpts) assembleOpts.style.display = 'none';
+        if (mainBtn) mainBtn.innerHTML = '🚀 Start Render';
+      }
+
       if (mode === 'dubbing') {
         document.getElementById('voiceSpeed').value = '1.3';
         document.getElementById('speedVal').textContent = '1.3x';
@@ -1502,6 +1805,14 @@ Part 2 ဆက်ကြည့်ချင်ရင် Like & Follow လုပ်�
         return;
       }
 
+      if (CURRENT_MODE === 'assemble') {
+        const srtRaw = document.getElementById('srtTextEditor') ? document.getElementById('srtTextEditor').value.trim() : "";
+        if (!ACTIVE_CAPTIONS.length && !srtRaw && !CURRENT_UPLOADED_SRT_PATH) {
+          alert("Please choose a subtitle file (.srt / .vtt) or enter subtitles in Assemble Mode.");
+          return;
+        }
+      }
+
       const isBlurActive = document.getElementById('blurEnabled').checked && blurBoxEl && blurBoxEl.style.display !== 'none';
       const payload = {
         job_id: CURRENT_PREPARED_JOB || undefined,
@@ -1584,6 +1895,45 @@ Part 2 ဆက်ကြည့်ချင်ရင် Like & Follow လုပ်�
         document.getElementById('durationRouteIndicator').textContent =
           `Duration: ${prepData.duration.toFixed(1)}s · Active TTS: ${prepData.routed_tts_model}`;
 
+        // IF ASSEMBLE MODE: FAST-PATH (Direct FFmpeg Merge in Seconds, Zero AI Cost!)
+        if (CURRENT_MODE === 'assemble') {
+          updateUI(60, 'Assemble Mode: Merging video and subtitles with FFmpeg filtergraph...');
+          const renderRes = await fetch('/api/video/step/render', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              job_id: jobId,
+              voice_audio_base64: "",
+              script: { captions: ACTIVE_CAPTIONS },
+              duration: prepData.duration,
+              title: prepData.title,
+              media_info: prepData.media_info,
+              url: payload.url,
+              uploaded_srt_path: CURRENT_UPLOADED_SRT_PATH,
+              raw_srt: document.getElementById('srtTextEditor') ? document.getElementById('srtTextEditor').value.trim() : "",
+              captions: ACTIVE_CAPTIONS,
+              ...payload
+            })
+          });
+          if (!renderRes.ok) {
+            const err = await renderRes.json().catch(() => ({ detail: renderRes.statusText }));
+            throw new Error(err.error || err.detail || 'Assemble rendering failed');
+          }
+          const renderData = await renderRes.json();
+          updateUI(100, 'Completed! Video assembled with burned-in subtitles.');
+          toggleSubtitleGuide(false);
+
+          const player = document.getElementById('studioVideoPlayer');
+          player.src = renderData.download_url + '?t=' + Date.now();
+          player.play().catch(() => {});
+
+          linksRow.style.display = 'flex';
+          document.getElementById('downloadMp4Link').href = renderData.download_url;
+          document.getElementById('downloadSrtLink').href = renderData.srt_url;
+          loadVoicesAndKeys();
+          return;
+        }
+
         // STEP 2: TRANSCRIBE AUDIO (25% -> 50%)
         updateUI(35, 'Step 2/5: Extracting audio & transcribing via Groq Whisper Large v3 Turbo...');
         const transRes = await fetch('/api/video/step/transcribe', {
@@ -1621,6 +1971,9 @@ Part 2 ဆက်ကြည့်ချင်ရင် Like & Follow လုပ်�
         const scriptData = await scriptRes.json();
         if (scriptData.script?.full_narration) {
           document.getElementById('generatedScriptOutput').value = scriptData.script.full_narration;
+        }
+        if (scriptData.script?.captions) {
+          ACTIVE_CAPTIONS = scriptData.script.captions;
         }
         updateUI(75, `Script generated (${scriptData.script?.captions?.length || 0} subtitle lines)`);
 
@@ -1676,6 +2029,7 @@ Part 2 ဆက်ကြည့်ချင်ရင် Like & Follow လုပ်�
         }
         const renderData = await renderRes.json();
         updateUI(100, 'Completed! Video rendered & archived.');
+        toggleSubtitleGuide(false);
 
         const player = document.getElementById('studioVideoPlayer');
         player.src = renderData.download_url + '?t=' + Date.now();
@@ -1714,6 +2068,10 @@ Part 2 ဆက်ကြည့်ချင်ရင် Like & Follow လုပ်�
         }
         if (job.status === 'completed') {
           clearInterval(ACTIVE_POLL_TIMER);
+          toggleSubtitleGuide(false);
+          if (job.script && job.script.captions) {
+            ACTIVE_CAPTIONS = job.script.captions;
+          }
           const player = document.getElementById('studioVideoPlayer');
           player.src = job.download_url + '?t=' + Date.now();
           player.play().catch(() => {});
@@ -1917,6 +2275,9 @@ Part 2 ဆက်ကြည့်ချင်ရင် Like & Follow လုပ်�
     const subGuideEl = document.getElementById('onCanvasSubtitleGuide');
     if (subGuideEl) {
       subGuideEl.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.sub-guide-close-btn') || e.target.closest('#onCanvasSubText')) {
+          return; // Let user edit text or click close!
+        }
         isDraggingSub = true;
         e.preventDefault();
       });
@@ -1939,6 +2300,13 @@ Part 2 ဆက်ကြည့်ချင်ရင် Like & Follow လုပ်�
       if (subGuideEl) {
         subGuideEl.style.top = v + '%';
         document.getElementById('subGuideBadge').textContent = `↕ SUBTITLES POSITION (${v}%)`;
+        if (subGuideEl.style.display === 'none') {
+          toggleSubtitleGuide(true);
+        }
+      }
+      const liveEl = document.getElementById('liveSubtitleDisplay');
+      if (liveEl) {
+        liveEl.style.top = v + '%';
       }
     }
 
@@ -2215,6 +2583,9 @@ Part 2 ဆက်ကြည့်ချင်ရင် Like & Follow လုပ်�
         subText.style.padding = '0';
         subText.style.textShadow = '0 2px 4px #000, 0 0 2px #000';
       }
+      if (typeof updateLiveSubtitleDisplay === 'function') {
+        updateLiveSubtitleDisplay();
+      }
     }
 
     function updateRecapStrategyDesc() {
@@ -2233,6 +2604,14 @@ Part 2 ဆက်ကြည့်ချင်ရင် Like & Follow လုပ်�
     loadVoicesAndKeys();
     updatePreviewStageAspect('9:16');
     updateSubtitleLiveStyle();
+
+    const studioPlayerInit = document.getElementById('studioVideoPlayer');
+    if (studioPlayerInit) {
+      studioPlayerInit.addEventListener('play', () => {
+        toggleSubtitleGuide(false);
+      });
+      studioPlayerInit.addEventListener('timeupdate', updateLiveSubtitleDisplay);
+    }
   </script>
 </body>
 </html>

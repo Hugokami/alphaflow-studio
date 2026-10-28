@@ -1172,19 +1172,26 @@ def render_final_video(
         v_filters.append("scale=trunc(iw/2)*2:trunc(ih/2)*2")
 
     # 5. Burned-in Subtitles (Hardsub if supported by local FFmpeg build)
-    if options.get("subtitle_enabled") and srt_path and srt_path.exists() and options.get("subtitle_type", "encode") == "encode":
-        escaped_srt = str(srt_path).replace("\\", "/").replace(":", "\\:")
-        font_size = int(options.get("subtitle_font_size", 55)) // 2
-        margin_v = int(options.get("subtitle_margin_v", 35))
+    sub_enabled = options.get("subtitle_enabled") in (True, "true", "True", 1, "1") or options.get("processing_mode") == "assemble"
+    sub_type = str(options.get("subtitle_type", "encode")).lower()
+    if sub_enabled and srt_path and srt_path.exists() and sub_type != "file":
+        escaped_srt = str(srt_path.resolve()).replace("\\", "/").replace(":", "\\:")
+        canvas_h = 1920 if ratio == "9:16" else (1440 if ratio == "3:4" else (1080 if ratio == "1:1" else h))
+        raw_size = int(options.get("subtitle_font_size", 44))
+        if ratio == "9:16":
+            font_size = max(26, min(65, int(raw_size * 0.9)))
+        else:
+            font_size = max(20, min(50, int(raw_size * 0.75)))
+
+        margin_v = 40
         if "subtitle_y" in options:
             try:
                 sub_y = float(options["subtitle_y"])
                 if sub_y <= 1.0:
                     sub_y *= 100.0
-                canvas_h = 1920 if ratio == "9:16" else (1440 if ratio == "3:4" else (1080 if ratio == "1:1" else h))
-                margin_v = max(15, int(((100.0 - sub_y) / 100.0) * canvas_h))
+                margin_v = max(15, min(canvas_h - 100, int(((100.0 - sub_y) / 100.0) * canvas_h)))
             except Exception:
-                margin_v = 35
+                margin_v = 40
 
         # Subtitle Color & Border Style Customization
         sub_color_val = str(options.get("subtitle_color", "white")).lower()
@@ -1192,17 +1199,20 @@ def render_final_video(
             primary_colour = "&H0000FFFF"  # Yellow in BGR format
         elif sub_color_val in ("cyan", "#00ffff", "#38bdf8"):
             primary_colour = "&H00FFFF00"  # Cyan in BGR format
+        elif sub_color_val in ("green", "#10b981", "#34d399"):
+            primary_colour = "&H0000FF00"  # Green
         else:
             primary_colour = "&H00FFFFFF"  # White in BGR format
 
         sub_style_val = str(options.get("subtitle_style", "outline")).lower()
         if sub_style_val == "box":
-            style_params = "BorderStyle=3,Outline=2,Shadow=1"
+            style_params = "BorderStyle=3,Outline=2,Shadow=1,BackColour=&H80000000"
         else:
             style_params = "BorderStyle=1,Outline=3,Shadow=0"
 
+        font_name = options.get("subtitle_font") or "Myanmar Text"
         v_filters.append(
-            f"subtitles='{escaped_srt}':force_style='FontName=Myanmar Text,FontSize={font_size},PrimaryColour={primary_colour},OutlineColour=&H00000000,{style_params},MarginV={margin_v}'"
+            f"subtitles='{escaped_srt}':force_style='FontName={font_name},FontSize={font_size},PrimaryColour={primary_colour},OutlineColour=&H00000000,{style_params},Alignment=2,MarginV={margin_v}'"
         )
 
     vf_chain = ",".join(v_filters) if v_filters else "null"
@@ -1304,9 +1314,13 @@ def render_final_video(
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     except subprocess.CalledProcessError as err:
         stderr_msg = err.stderr.decode("utf-8", errors="ignore") if err.stderr else ""
-        print("FFmpeg primary render notice:", stderr_msg[:200])
-        # Fallback without subtitles filter (e.g. if static ffmpeg build lacks libass)
-        clean_v_filters = [f for f in v_filters if not f.startswith("subtitles=")]
+        print("[*] [Pipeline] FFmpeg primary render notice:", stderr_msg[:250])
+        # Only fallback without subtitles if subtitles/libass was the explicit failure cause
+        if any(w in stderr_msg.lower() for w in ("subtitles", "libass", "font")):
+            print("[*] [Pipeline] Retrying render without subtitles filter...")
+            clean_v_filters = [f for f in v_filters if not f.startswith("subtitles=")]
+        else:
+            clean_v_filters = v_filters
         clean_vf = ",".join(clean_v_filters) if clean_v_filters else "null"
         if voice_audio and voice_audio.exists():
             fallback_cmd = [

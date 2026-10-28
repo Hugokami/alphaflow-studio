@@ -290,6 +290,76 @@ async def get_video_info_endpoint(url: str) -> Any:
         return JSONResponse(status_code=400, content={"error": str(exc)})
 
 
+def parse_srt_text(text: str) -> list:
+    """Robust parser for SRT and WebVTT timestamps and text lines."""
+    import re
+    time_pat = re.compile(r'(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})')
+    blocks = re.split(r'\n\s*\n', text.strip())
+    captions = []
+    for block in blocks:
+        lines = [l.strip() for l in block.splitlines() if l.strip()]
+        if not lines:
+            continue
+        time_idx = -1
+        for idx, l in enumerate(lines):
+            if '-->' in l:
+                time_idx = idx
+                break
+        if time_idx == -1:
+            continue
+        m = time_pat.search(lines[time_idx])
+        if not m:
+            continue
+        h1, m1, s1, ms1, h2, m2, s2, ms2 = map(int, m.groups())
+        start = h1 * 3600 + m1 * 60 + s1 + ms1 / 1000.0
+        end = h2 * 3600 + m2 * 60 + s2 + ms2 / 1000.0
+        caption_text = " ".join(lines[time_idx + 1:])
+        if caption_text:
+            captions.append({
+                "start": round(start, 2),
+                "end": round(end, 2),
+                "text": caption_text
+            })
+    return captions
+
+
+@app.post("/api/video/upload-srt")
+async def upload_srt_endpoint(
+    file: Optional[UploadFile] = File(None),
+    raw_srt: Optional[str] = Form(None),
+    job_id: Optional[str] = Form(None),
+) -> Dict[str, Any]:
+    target_job_id = job_id or f"up_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+    job_dir = JOBS_DIR / target_job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = job_dir / "captions.srt"
+
+    content = ""
+    filename = "captions.srt"
+    if file:
+        filename = file.filename or "captions.srt"
+        raw_bytes = await file.read()
+        try:
+            content = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            content = raw_bytes.decode("latin-1", errors="ignore")
+    elif raw_srt:
+        content = raw_srt
+
+    dest_path.write_text(content, encoding="utf-8")
+    parsed_captions = parse_srt_text(content)
+
+    return {
+        "success": True,
+        "job_id": target_job_id,
+        "filename": filename,
+        "srt_path": str(dest_path),
+        "caption_count": len(parsed_captions),
+        "captions": parsed_captions,
+        "raw_content": content[:10000],
+    }
+
+
 @app.get("/api/video/local-preview/{job_id}")
 async def stream_local_preview(job_id: str) -> FileResponse:
     job_dir = JOBS_DIR / job_id
@@ -345,6 +415,65 @@ async def _run_job_pipeline(job_id: str, params: Dict[str, Any]) -> None:
             duration=duration_sec,
             routed_tts_model=routed_models[0],
         )
+
+        # ASSEMBLE MODE FAST-PATH: Direct Video + SRT Fast Burn-In (0 AI token cost, 3-5s render)
+        if params.get("processing_mode") == "assemble":
+            _update(2, 60, "Assemble Mode: Preparing subtitles (.srt)...")
+            srt_path = job_dir / "captions.srt"
+            if params.get("uploaded_srt_path") and Path(params["uploaded_srt_path"]).exists():
+                shutil.copy2(params["uploaded_srt_path"], srt_path)
+            elif params.get("raw_srt"):
+                srt_path.write_text(params["raw_srt"], encoding="utf-8")
+            elif params.get("captions"):
+                await asyncio.to_thread(write_srt_file, params["captions"], srt_path)
+            elif not srt_path.exists():
+                srts = list(job_dir.glob("*.srt"))
+                if srts:
+                    srt_path = srts[0]
+
+            _update(3, 80, "Assemble Mode: Burning subtitles into video with FFmpeg...")
+            out_video = job_dir / "final_output.mp4"
+            render_opts = {**params, "subtitle_enabled": True}
+            await asyncio.to_thread(
+                render_final_video,
+                media_info["video_path"],
+                None,
+                srt_path if srt_path.exists() else None,
+                out_video,
+                render_opts,
+                media_info,
+            )
+
+            _update(4, 95, "Generating video thumbnails...")
+            thumbs_res = []
+            try:
+                raw_thumbs = await asyncio.to_thread(
+                    generate_thumbnail_slices, out_video, job_dir / "thumbnails", duration_sec
+                )
+                thumbs_res = [
+                    {
+                        "index": t["index"],
+                        "url": f"/api/video/thumbnail/{job_id}/{t['index']}",
+                        "timestamp": t["timestamp"],
+                        "size": t["size"],
+                        "path": str(t.get("path", "")),
+                    }
+                    for t in raw_thumbs
+                ]
+            except Exception as e:
+                print("Thumbnails error:", e)
+
+            _update(
+                4,
+                100,
+                "Assemble completed successfully!",
+                status="completed",
+                download_url=f"/api/video/local-preview/{job_id}",
+                srt_url=f"/api/video/subtitle/{job_id}/download",
+                thumbnails=thumbs_res,
+                social_package={},
+            )
+            return
 
         # STEP 1: Transcription via Groq Whisper Large v3 Turbo (or bypass if custom script provided)
         if params.get("custom_script") and str(params["custom_script"]).strip():
@@ -776,14 +905,23 @@ async def step_render_video(request: Request) -> Dict[str, Any]:
                 except Exception as down_err:
                     print("Source recovery notice:", down_err)
 
-        # 3. Recover captions.srt if missing
+        # 3. Recover captions.srt if missing or from assemble payload
         srt_path = job_dir / "captions.srt"
+        if params.get("uploaded_srt_path") and Path(params["uploaded_srt_path"]).exists():
+            shutil.copy2(params["uploaded_srt_path"], srt_path)
+        elif params.get("raw_srt"):
+            srt_path.write_text(params["raw_srt"], encoding="utf-8")
+        elif params.get("captions") and not srt_path.exists():
+            write_srt_file(params["captions"], srt_path)
         script = params.get("script") or JOBS[job_id].get("script") or {}
         if not srt_path.exists() and script.get("captions"):
             write_srt_file(script["captions"], srt_path)
 
         out_video = job_dir / "final_output.mp4"
         render_options = {**JOBS[job_id].get("params", {}), **params}
+        if params.get("processing_mode") == "assemble":
+            audio_path = None
+            render_options["subtitle_enabled"] = True
 
         # 4. Render final video with FFmpeg
         await asyncio.to_thread(

@@ -290,12 +290,103 @@
       background: #05070A;
       border: 1px solid var(--border-hairline);
       border-radius: 12px;
-      aspect-ratio: 16 / 9;
       position: relative;
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .preview-stage.aspect-16-9, .preview-stage.landscape {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      max-width: 100%;
+      margin: 0;
+      border-radius: 12px;
+      box-shadow: none;
+    }
+    .preview-stage.aspect-9-16, .preview-stage.portrait {
+      width: 100%;
+      max-width: 330px;
+      aspect-ratio: 9 / 16;
+      margin: 0 auto;
+      border-radius: 28px;
+      box-shadow: 0 25px 60px -15px rgba(0,0,0,0.85), 0 0 0 3px #1E293B, 0 0 0 7px #0A0F17;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .preview-stage.aspect-1-1, .preview-stage.square {
+      width: 100%;
+      max-width: 440px;
+      aspect-ratio: 1 / 1;
+      margin: 0 auto;
+      border-radius: 16px;
+      box-shadow: 0 15px 35px -10px rgba(0,0,0,0.6);
+    }
+    .preview-stage.aspect-3-4 {
+      width: 100%;
+      max-width: 380px;
+      aspect-ratio: 3 / 4;
+      margin: 0 auto;
+      border-radius: 18px;
+      box-shadow: 0 15px 35px -10px rgba(0,0,0,0.6);
+    }
+    .aspect-switch-group {
+      display: inline-flex;
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-hairline);
+      border-radius: 8px;
+      padding: 2px;
+      gap: 2px;
+    }
+    .aspect-pill {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 4px 9px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+    }
+    .aspect-pill:hover { color: var(--text-primary); }
+    .aspect-pill.active {
+      background: var(--accent);
+      color: #FFFFFF;
+      box-shadow: 0 2px 6px rgba(37,99,235,0.3);
+    }
+    .blur-top-bar {
+      position: absolute;
+      top: -26px;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: auto;
+    }
+    .blur-close-btn {
+      background: #EF4444;
+      color: #FFFFFF;
+      border: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.65rem;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+      transition: all 0.15s ease;
+    }
+    .blur-close-btn:hover {
+      background: #DC2626;
+      transform: scale(1.15);
     }
     .preview-stage video {
       width: 100%;
@@ -633,14 +724,34 @@
           </div>
         </div>
 
+        <!-- Full-Length Recap Mode Controls (Default) -->
+        <div id="recapModeOptions" class="form-group" style="background:var(--bg-canvas); padding:12px; border-radius:10px; border:1px solid var(--border-hairline);">
+          <label class="form-label" style="margin-bottom:4px;">
+            <span style="font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+              <span>📖 Recap Coverage & Duration</span>
+              <span class="micro-badge" style="background:rgba(16,185,129,0.15); color:#34D399; border-color:rgba(16,185,129,0.35);">DEFAULT</span>
+            </span>
+            <span style="color:var(--emerald); font-size:0.75rem;">100% Full Video Runtime</span>
+          </label>
+          <select id="recapLengthStrategy" style="margin-top:4px;" onchange="updateRecapStrategyDesc()">
+            <option value="full_length" selected>🎬 Full-Length Complete Recap (100% Full Video — No AI Trimming or Cutting)</option>
+            <option value="chapter_highlights">⚡ Chapter Highlights Recap (Evenly distributed key turning points)</option>
+            <option value="condensed_hook">⏱ Short Hook Teaser (Quick 60s viral summary)</option>
+          </select>
+          <div id="recapStrategyDesc" style="font-size:0.73rem; color:var(--text-secondary); margin-top:6px; line-height:1.4;">
+            ✅ <b>Full-Length Mode:</b> The original video is <b>100% preserved from start to finish</b>. AI crafts a rich scene-by-scene narration covering 0:00 to end without trimming or shortening the video.
+          </div>
+        </div>
+
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
           <div class="form-group">
             <label class="form-label">Aspect Ratio</label>
-            <select id="aspectRatio">
-              <option value="original">Original Ratio</option>
+            <select id="aspectRatio" onchange="updatePreviewStageAspect(this.value)">
               <option value="9:16" selected>9:16 (Shorts / TikTok / Reels)</option>
+              <option value="16:9">16:9 Widescreen (YouTube)</option>
+              <option value="1:1">1:1 Square (Instagram)</option>
               <option value="3:4">3:4 Portrait</option>
-              <option value="1:1">1:1 Square</option>
+              <option value="original">Original Ratio</option>
             </select>
           </div>
           <div class="form-group">
@@ -720,43 +831,84 @@
 
       <!-- STEP 3: EFFECTS & SUBTITLES -->
       <div id="stepPane3" class="step-pane">
-        <div class="form-group">
-          <label class="form-label">
-            <span>Burn-in Subtitles (Hardsub + Downloadable .SRT)</span>
-            <input type="checkbox" id="subtitleEnabled" checked />
-          </label>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-            <select id="subtitleFontSize">
-              <option value="36">Small (36px)</option>
-              <option value="55" selected>Medium (55px)</option>
-              <option value="72">Large (72px)</option>
-            </select>
-            <select id="subtitleType">
-              <option value="encode" selected>Burn into Video (Hardsub)</option>
-              <option value="file">SRT File Only</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">
-            <span>Hardsub Blur Mask (Interactive On-Canvas Drag & Resize)</span>
-            <span style="display:flex; align-items:center; gap:8px;">
-              <button type="button" class="copy-pill" style="font-size:0.68rem; color:var(--emerald);" onclick="autoDetectHardsubs()">
+        <!-- Upgrade: Flexible Hardsub Blur Mask (Optional, Removable) -->
+        <div class="form-group" style="background:var(--bg-canvas); padding:12px; border-radius:10px; border:1px solid var(--border-hairline);">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <label class="form-label" style="margin-bottom:0;">
+              <span style="font-weight:700; font-size:0.86rem;">Hardsub Blur Mask</span>
+              <span class="micro-badge" id="blurStatusBadge" style="background:rgba(156,163,175,0.15); color:#9CA3AF; border-color:rgba(156,163,175,0.3);">OFF (OPTIONAL)</span>
+            </label>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <button type="button" id="btnToggleBlur" class="pill-btn primary" onclick="toggleBlurMask()" style="font-size:0.74rem; padding:4px 10px;">
+                ➕ Add Blur Mask
+              </button>
+              <button type="button" class="copy-pill" style="font-size:0.72rem; color:var(--emerald);" onclick="autoDetectHardsubs()">
                 ⚡ Auto-Detect
               </button>
-              <input type="checkbox" id="blurEnabled" onchange="toggleBlurOverlay(this.checked)" checked />
-            </span>
-          </label>
-          <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px;">
-            <div><small style="color:var(--text-muted); font-family:'JetBrains Mono',monospace;">X %</small><input type="number" id="blurX" class="input" value="10" min="0" max="90" oninput="syncInputsToCanvas()" /></div>
-            <div><small style="color:var(--text-muted); font-family:'JetBrains Mono',monospace;">Y %</small><input type="number" id="blurY" class="input" value="82" min="0" max="95" oninput="syncInputsToCanvas()" /></div>
-            <div><small style="color:var(--text-muted); font-family:'JetBrains Mono',monospace;">W %</small><input type="number" id="blurW" class="input" value="80" min="5" max="100" oninput="syncInputsToCanvas()" /></div>
-            <div><small style="color:var(--text-muted); font-family:'JetBrains Mono',monospace;">H %</small><input type="number" id="blurH" class="input" value="12" min="5" max="40" oninput="syncInputsToCanvas()" /></div>
+              <input type="checkbox" id="blurEnabled" onchange="toggleBlurOverlay(this.checked)" style="display:none;" />
+            </div>
           </div>
-          <small style="color:var(--text-secondary); font-size:0.72rem;">💡 Tip: You can drag and resize the blue blur box directly on the video player to cover watermarks or foreign hardsubs!</small>
+          
+          <div id="blurControlsWrap" style="display:none; margin-top:10px; border-top:1px solid var(--border-hairline); padding-top:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+              <span style="font-size:0.75rem; color:var(--text-secondary);">Quick Presets:</span>
+              <div style="display:flex; gap:6px;">
+                <button type="button" class="copy-pill" onclick="applyBlurPreset('bottom')">⬇️ Bottom Subtitles</button>
+                <button type="button" class="copy-pill" onclick="applyBlurPreset('top')">⬆️ Top Watermark</button>
+                <button type="button" class="copy-pill" onclick="removeBlurMask(event)" style="color:#EF4444; border-color:rgba(239,68,68,0.4);">✕ Delete Mask</button>
+              </div>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px;">
+              <div><small style="color:var(--text-muted); font-family:'JetBrains Mono',monospace;">X %</small><input type="number" id="blurX" class="input" value="15" min="0" max="90" oninput="syncInputsToCanvas()" /></div>
+              <div><small style="color:var(--text-muted); font-family:'JetBrains Mono',monospace;">Y %</small><input type="number" id="blurY" class="input" value="80" min="0" max="95" oninput="syncInputsToCanvas()" /></div>
+              <div><small style="color:var(--text-muted); font-family:'JetBrains Mono',monospace;">W %</small><input type="number" id="blurW" class="input" value="70" min="5" max="100" oninput="syncInputsToCanvas()" /></div>
+              <div><small style="color:var(--text-muted); font-family:'JetBrains Mono',monospace;">H %</small><input type="number" id="blurH" class="input" value="10" min="4" max="40" oninput="syncInputsToCanvas()" /></div>
+            </div>
+            <small style="color:var(--text-secondary); font-size:0.72rem; display:block; margin-top:6px;">💡 Drag &amp; resize the blue blur box on the video monitor above, or click ✕ on its corner anytime.</small>
+          </div>
         </div>
 
+        <!-- Subtitle Styling & Customization -->
+        <div class="form-group" style="background:var(--bg-canvas); padding:12px; border-radius:10px; border:1px solid var(--border-hairline);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <label class="form-label" style="margin-bottom:0;">
+              <span style="font-weight:700;">Burn-in Subtitle Styling</span>
+            </label>
+            <input type="checkbox" id="subtitleEnabled" checked />
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:8px;">
+            <div>
+              <small style="color:var(--text-secondary); display:block; margin-bottom:4px;">Subtitle Style</small>
+              <select id="subtitleStyle" onchange="updateSubtitleLiveStyle()">
+                <option value="outline" selected>Crisp Outline Stroke (Default)</option>
+                <option value="box">Solid Opaque Box (High Contrast)</option>
+              </select>
+            </div>
+            <div>
+              <small style="color:var(--text-secondary); display:block; margin-bottom:4px;">Subtitle Color</small>
+              <select id="subtitleColor" onchange="updateSubtitleLiveStyle()">
+                <option value="white" selected>Pure White (&amp;HFFFFFF)</option>
+                <option value="yellow">TikTok Yellow Pop (&amp;H00FFFF)</option>
+                <option value="cyan">Neon Cyan Modern (&amp;HFFFF00)</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div>
+              <small style="color:var(--text-secondary); display:block; margin-bottom:4px;">Font Size (<span id="subFontSizeVal">55px</span>)</small>
+              <input type="range" id="subtitleFontSize" min="28" max="75" value="55" step="1" oninput="document.getElementById('subFontSizeVal').textContent=this.value+'px'; updateSubtitleLiveStyle();" />
+            </div>
+            <div>
+              <small style="color:var(--text-secondary); display:block; margin-bottom:4px;">Subtitle Output Mode</small>
+              <select id="subtitleType">
+                <option value="encode" selected>Burn into Video (Hardsub)</option>
+                <option value="file">SRT File Only</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Burn-in Subtitle Vertical Position -->
         <div class="form-group">
           <label class="form-label">
             <span>Burn-in Subtitle Vertical Position (<span id="subYDisplay">85%</span>)</span>
@@ -764,6 +916,24 @@
           </label>
           <input type="range" id="subtitleYRange" min="20" max="95" value="85" step="1" oninput="setSubtitleY(this.value)" />
           <input type="hidden" id="subtitleY" value="85" />
+        </div>
+
+        <!-- Audio Mixing & Ducking -->
+        <div class="form-group" style="background:var(--bg-canvas); padding:12px; border-radius:10px; border:1px solid var(--border-hairline);">
+          <label class="form-label">
+            <span>Audio Mixing &amp; Ducking</span>
+            <span style="color:var(--emerald);">Smart Volume Balance</span>
+          </label>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:6px;">
+            <div>
+              <small style="color:var(--text-secondary); display:block; margin-bottom:4px;">AI Voiceover Volume (<span id="voiceVolVal">100%</span>)</small>
+              <input type="range" id="voiceVolumeRange" min="50" max="150" value="100" step="5" oninput="document.getElementById('voiceVolVal').textContent=this.value+'%'" />
+            </div>
+            <div>
+              <small style="color:var(--text-secondary); display:block; margin-bottom:4px;">Original Video SFX (<span id="bgVolVal">15%</span>)</small>
+              <input type="range" id="bgVolumeRange" min="0" max="60" value="15" step="5" oninput="document.getElementById('bgVolVal').textContent=this.value+'%'" />
+            </div>
+          </div>
         </div>
 
         <div class="form-group">
@@ -848,24 +1018,44 @@
           <div class="card-title">🎬 Live Studio Monitor & Render Telemetry</div>
           <span class="micro-badge" id="durationRouteIndicator">Duration: -- · Route: gemini-3.8-flash-tts</span>
         </div>
-        <div style="display:flex; gap:8px;">
-          <button type="button" class="step-tab" onclick="refreshCurrentPreview()" style="border:1px solid var(--border-hairline); padding:6px 12px; font-size:0.75rem;" title="Reload current preview">
+        <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+          <!-- 1-Click Interactive Aspect Ratio Switcher -->
+          <div class="aspect-switch-group">
+            <button type="button" class="aspect-pill active" id="btnAspectPortrait" onclick="setAspectRatioMode('9:16')" title="Switch to 9:16 Mobile Portrait Preview">
+              📱 9:16 Portrait
+            </button>
+            <button type="button" class="aspect-pill" id="btnAspectLandscape" onclick="setAspectRatioMode('16:9')" title="Switch to 16:9 Widescreen Preview">
+              💻 16:9 Widescreen
+            </button>
+            <button type="button" class="aspect-pill" id="btnAspectSquare" onclick="setAspectRatioMode('1:1')" title="Switch to 1:1 Square Preview">
+              ⏹ 1:1 Square
+            </button>
+          </div>
+
+          <!-- Quick Add / Remove Blur Mask -->
+          <button type="button" id="monitorBlurBtn" class="step-tab" onclick="toggleBlurMask()" style="border:1px solid var(--border-hairline); padding:5px 10px; font-size:0.75rem;">
+            ➕ Add Blur Mask
+          </button>
+          <button type="button" class="step-tab" onclick="refreshCurrentPreview()" style="border:1px solid var(--border-hairline); padding:5px 10px; font-size:0.75rem;" title="Reload current preview">
             🔄 Refresh
           </button>
-          <button type="button" class="step-tab" onclick="addNewVideoPrompt()" style="border:1px solid var(--border-hairline); background:var(--accent); color:#fff; padding:6px 12px; font-size:0.75rem;" title="Clear and add a new video">
-            + Add New Video
+          <button type="button" class="step-tab" onclick="addNewVideoPrompt()" style="border:1px solid var(--border-hairline); background:var(--accent); color:#fff; padding:5px 10px; font-size:0.75rem;" title="Clear and add a new video">
+            + New Video
           </button>
         </div>
       </div>
 
-      <div class="preview-stage" id="previewStageWrapper">
+      <div class="preview-stage aspect-9-16" id="previewStageWrapper">
         <video id="studioVideoPlayer" controls playsinline></video>
         
         <!-- Interactive On-Canvas Overlay Layer -->
         <div class="canvas-overlay-layer" id="canvasOverlayLayer">
-          <!-- Draggable / Resizable Blur Box -->
-          <div id="onCanvasBlurBox" class="on-canvas-blur-box" style="left:10%; top:82%; width:80%; height:12%;">
-            <span id="blurCoordsBadge" class="blur-coords-badge">Blur Mask [10%, 82%, 80%, 12%]</span>
+          <!-- Draggable / Resizable Blur Box (Optional, hidden by default) -->
+          <div id="onCanvasBlurBox" class="on-canvas-blur-box" style="display:none; left:15%; top:80%; width:70%; height:10%;">
+            <div class="blur-top-bar">
+              <span id="blurCoordsBadge" class="blur-coords-badge">Blur Mask [15%, 80%, 70%, 10%]</span>
+              <button type="button" class="blur-close-btn" onclick="removeBlurMask(event)" title="Delete / Remove this blur mask">✕</button>
+            </div>
             <div class="resize-handle handle-nw" data-handle="nw"></div>
             <div class="resize-handle handle-ne" data-handle="ne"></div>
             <div class="resize-handle handle-se" data-handle="se"></div>
@@ -875,7 +1065,7 @@
           <!-- Draggable Subtitle Vertical Guide -->
           <div id="onCanvasSubtitleGuide" class="on-canvas-sub-guide" style="top:85%;">
             <div class="sub-guide-badge" id="subGuideBadge">↕ SUBTITLES POSITION (85%)</div>
-            <div class="sub-guide-text">ဒီဇာတ်လမ်းကတော့ မဖြစ်မနေ ကြည့်သင့်တဲ့ ဇာတ်ကားကောင်းတစ်ခု ဖြစ်ပါတယ်</div>
+            <div class="sub-guide-text" id="onCanvasSubText">ဒီဇာတ်လမ်းကတော့ မဖြစ်မနေ ကြည့်သင့်တဲ့ ဇာတ်ကားကောင်းတစ်ခု ဖြစ်ပါတယ်</div>
           </div>
         </div>
       </div>
@@ -1312,28 +1502,34 @@ Part 2 ဆက်ကြည့်ချင်ရင် Like & Follow လုပ်�
         return;
       }
 
+      const isBlurActive = document.getElementById('blurEnabled').checked && blurBoxEl && blurBoxEl.style.display !== 'none';
       const payload = {
         job_id: CURRENT_PREPARED_JOB || undefined,
         url: url,
         video_file_path: video_file_path,
         processing_mode: CURRENT_MODE,
+        recap_length: document.getElementById('recapLengthStrategy') ? document.getElementById('recapLengthStrategy').value : 'full_length',
         aspect_ratio: document.getElementById('aspectRatio').value,
         target_language: document.getElementById('targetLanguage').value,
         use_zoom: document.getElementById('useZoom').checked,
         voice: document.getElementById('selectedVoiceId').value,
         gemini_tts_model: document.getElementById('geminiTtsModel').value,
         voice_speed: parseFloat(document.getElementById('voiceSpeed').value),
+        voice_volume: document.getElementById('voiceVolumeRange') ? parseFloat(document.getElementById('voiceVolumeRange').value) / 100.0 : 1.0,
+        bg_volume: document.getElementById('bgVolumeRange') ? parseFloat(document.getElementById('bgVolumeRange').value) / 100.0 : 0.15,
         audio_enhancement: document.getElementById('audioEnhancement').value,
         subtitle_enabled: document.getElementById('subtitleEnabled').checked,
         subtitle_font_size: parseInt(document.getElementById('subtitleFontSize').value, 10),
+        subtitle_color: document.getElementById('subtitleColor') ? document.getElementById('subtitleColor').value : 'white',
+        subtitle_style: document.getElementById('subtitleStyle') ? document.getElementById('subtitleStyle').value : 'outline',
         subtitle_type: document.getElementById('subtitleType').value,
-        blur_enabled: document.getElementById('blurEnabled').checked,
-        blur_boxes: [{
-          x: parseFloat(document.getElementById('blurX').value),
-          y: parseFloat(document.getElementById('blurY').value),
-          w: parseFloat(document.getElementById('blurW').value),
-          h: parseFloat(document.getElementById('blurH').value)
-        }],
+        blur_enabled: isBlurActive,
+        blur_boxes: isBlurActive ? [{
+          x: parseFloat(document.getElementById('blurX').value) || 15,
+          y: parseFloat(document.getElementById('blurY').value) || 80,
+          w: parseFloat(document.getElementById('blurW').value) || 70,
+          h: parseFloat(document.getElementById('blurH').value) || 10
+        }] : [],
         subtitle_y: parseFloat(document.getElementById('subtitleY').value),
         intro_path: document.getElementById('introVideoPath').value.trim() || undefined,
         outro_path: document.getElementById('outroVideoPath').value.trim() || undefined,
@@ -1876,7 +2072,167 @@ Part 2 ဆက်ကြည့်ချင်ရင် Like & Follow လုပ်�
 
     // Include Intro & Outro and Subtitle_Y into triggerSubmitJob payload
 
+    
+    // ==========================================
+    // ASPECT RATIO & PHONE MONITOR CONTROLS
+    // ==========================================
+    function setAspectRatioMode(aspect) {
+      const aspectSel = document.getElementById('aspectRatio');
+      if (aspectSel) aspectSel.value = aspect;
+      updatePreviewStageAspect(aspect);
+    }
+
+    function updatePreviewStageAspect(aspect) {
+      const stage = document.getElementById('previewStageWrapper');
+      if (!stage) return;
+      
+      stage.classList.remove('aspect-16-9', 'aspect-9-16', 'aspect-1-1', 'aspect-3-4', 'portrait', 'landscape', 'square');
+      
+      const btnPortrait = document.getElementById('btnAspectPortrait');
+      const btnLandscape = document.getElementById('btnAspectLandscape');
+      const btnSquare = document.getElementById('btnAspectSquare');
+      if (btnPortrait) btnPortrait.classList.toggle('active', aspect === '9:16');
+      if (btnLandscape) btnLandscape.classList.toggle('active', aspect === '16:9');
+      if (btnSquare) btnSquare.classList.toggle('active', aspect === '1:1');
+
+      if (aspect === '9:16' || aspect === '3:4') {
+        stage.classList.add('aspect-9-16', 'portrait');
+      } else if (aspect === '1:1') {
+        stage.classList.add('aspect-1-1', 'square');
+      } else {
+        stage.classList.add('aspect-16-9', 'landscape');
+      }
+      syncInputsToCanvas();
+    }
+
+    // Video Auto-Aspect Detection on Load
+    const studioVideo = document.getElementById('studioVideoPlayer');
+    if (studioVideo) {
+      studioVideo.addEventListener('loadedmetadata', function() {
+        if (this.videoHeight > this.videoWidth) {
+          setAspectRatioMode('9:16');
+        }
+      });
+    }
+
+    // ==========================================
+    // BLUR MASK ENGINE (OPTIONAL & REMOVABLE)
+    // ==========================================
+    function toggleBlurMask() {
+      const blurBox = document.getElementById('onCanvasBlurBox');
+      const chk = document.getElementById('blurEnabled');
+      const wrap = document.getElementById('blurControlsWrap');
+      const btnMain = document.getElementById('btnToggleBlur');
+      const btnMonitor = document.getElementById('monitorBlurBtn');
+      const statusBadge = document.getElementById('blurStatusBadge');
+
+      const isCurrentlyVisible = blurBox && blurBox.style.display !== 'none';
+      const makeActive = !isCurrentlyVisible;
+
+      if (blurBox) blurBox.style.display = makeActive ? 'flex' : 'none';
+      if (chk) chk.checked = makeActive;
+      if (wrap) wrap.style.display = makeActive ? 'block' : 'none';
+
+      if (statusBadge) {
+        statusBadge.textContent = makeActive ? 'ON' : 'OFF (OPTIONAL)';
+        statusBadge.style.color = makeActive ? '#60A5FA' : '#9CA3AF';
+        statusBadge.style.borderColor = makeActive ? 'rgba(37,99,235,0.4)' : 'rgba(156,163,175,0.3)';
+        statusBadge.style.background = makeActive ? 'rgba(37,99,235,0.15)' : 'rgba(156,163,175,0.15)';
+      }
+
+      const label = makeActive ? '🗑️ Remove Blur Mask' : '➕ Add Blur Mask';
+      if (btnMain) btnMain.textContent = label;
+      if (btnMonitor) btnMonitor.textContent = label;
+
+      if (makeActive) syncInputsToCanvas();
+    }
+
+    function removeBlurMask(e) {
+      if (e) e.stopPropagation();
+      const blurBox = document.getElementById('onCanvasBlurBox');
+      const chk = document.getElementById('blurEnabled');
+      const wrap = document.getElementById('blurControlsWrap');
+      const btnMain = document.getElementById('btnToggleBlur');
+      const btnMonitor = document.getElementById('monitorBlurBtn');
+      const statusBadge = document.getElementById('blurStatusBadge');
+
+      if (blurBox) blurBox.style.display = 'none';
+      if (chk) chk.checked = false;
+      if (wrap) wrap.style.display = 'none';
+
+      if (statusBadge) {
+        statusBadge.textContent = 'OFF (OPTIONAL)';
+        statusBadge.style.color = '#9CA3AF';
+        statusBadge.style.borderColor = 'rgba(156,163,175,0.3)';
+        statusBadge.style.background = 'rgba(156,163,175,0.15)';
+      }
+
+      const label = '➕ Add Blur Mask';
+      if (btnMain) btnMain.textContent = label;
+      if (btnMonitor) btnMonitor.textContent = label;
+    }
+
+    function applyBlurPreset(preset) {
+      const blurBox = document.getElementById('onCanvasBlurBox');
+      if (!blurBox || blurBox.style.display === 'none') {
+        toggleBlurMask();
+      }
+      if (preset === 'bottom') {
+        document.getElementById('blurX').value = 15;
+        document.getElementById('blurY').value = 80;
+        document.getElementById('blurW').value = 70;
+        document.getElementById('blurH').value = 12;
+      } else if (preset === 'top') {
+        document.getElementById('blurX').value = 55;
+        document.getElementById('blurY').value = 5;
+        document.getElementById('blurW').value = 40;
+        document.getElementById('blurH').value = 10;
+      }
+      syncInputsToCanvas();
+    }
+
+    function updateSubtitleLiveStyle() {
+      const subText = document.getElementById('onCanvasSubText');
+      if (!subText) return;
+      const fontSz = document.getElementById('subtitleFontSize') ? document.getElementById('subtitleFontSize').value : 55;
+      const color = document.getElementById('subtitleColor') ? document.getElementById('subtitleColor').value : 'white';
+      const style = document.getElementById('subtitleStyle') ? document.getElementById('subtitleStyle').value : 'outline';
+
+      let hexColor = '#FFFFFF';
+      if (color === 'yellow') hexColor = '#FDE047';
+      else if (color === 'cyan') hexColor = '#38BDF8';
+
+      subText.style.color = hexColor;
+      subText.style.fontSize = Math.max(12, Math.min(24, Math.round(fontSz / 2.8))) + 'px';
+
+      if (style === 'box') {
+        subText.style.background = 'rgba(0, 0, 0, 0.85)';
+        subText.style.padding = '3px 8px';
+        subText.style.borderRadius = '4px';
+        subText.style.textShadow = 'none';
+      } else {
+        subText.style.background = 'transparent';
+        subText.style.padding = '0';
+        subText.style.textShadow = '0 2px 4px #000, 0 0 2px #000';
+      }
+    }
+
+    function updateRecapStrategyDesc() {
+      const sel = document.getElementById('recapLengthStrategy');
+      const desc = document.getElementById('recapStrategyDesc');
+      if (!sel || !desc) return;
+      if (sel.value === 'full_length') {
+        desc.innerHTML = '✅ <b>Full-Length Mode:</b> The original video is <b>100% preserved from start to finish</b>. AI crafts a rich scene-by-scene narration covering 0:00 to end without trimming or shortening the video.';
+      } else if (sel.value === 'chapter_highlights') {
+        desc.innerHTML = '⚡ <b>Chapter Highlights:</b> Key turning points are paced across the full video duration with natural breathing pauses between major story beats.';
+      } else {
+        desc.innerHTML = '⏱ <b>Short Hook Teaser:</b> Fast-paced 60s hook crafted for high-retention TikTok and Reels previews.';
+      }
+    }
+
     loadVoicesAndKeys();
+    updatePreviewStageAspect('9:16');
+    updateSubtitleLiveStyle();
   </script>
 </body>
 </html>

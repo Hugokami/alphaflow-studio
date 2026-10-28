@@ -370,6 +370,7 @@ async def _run_job_pipeline(job_id: str, params: Dict[str, Any]) -> None:
                 params.get("target_language", "Burmese (Myanmar Language)"),
                 params.get("script_style", "Engaging Story"),
                 params.get("voice_tone", "Energetic"),
+                params.get("recap_length", "full_length"),
             )
 
         srt_path = job_dir / "captions.srt"

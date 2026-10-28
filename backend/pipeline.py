@@ -360,6 +360,7 @@ def generate_recap_or_dub_script(
     target_language: str = "Burmese (Myanmar Language)",
     script_style: str = "Engaging Story",
     voice_tone: str = "Energetic",
+    recap_length: str = "full_length",
 ) -> Dict[str, Any]:
     """
     Generates a syllable-constrained, timestamp-aligned script in Burmese (or target language)
@@ -372,13 +373,24 @@ def generate_recap_or_dub_script(
     if not raw_text:
         raw_text = "(Visual / low-dialogue video clip — craft an engaging dramatic commentary fitting the duration.)"
 
-    mode_instruction = (
-        "Write a gripping, viral movie/anime recap narration"
-        if processing_mode == "recap"
-        else "Translate and adapt the dialogue for natural lip-synced dubbing"
-        if processing_mode == "dubbing"
-        else "Translate the transcript into accurate, punchy subtitle lines"
-    )
+    if processing_mode == "recap":
+        if recap_length == "full_length":
+            mode_instruction = (
+                f"Write a comprehensive FULL-LENGTH movie/anime story recap covering 100% of the video duration. "
+                f"DO NOT cut, skip, or truncate the storyline. The narration MUST continuously and engagingly "
+                f"narrate the entire visual and plot progression from 0.0s to {video_duration_sec:.1f}s without gaps or sudden stops."
+            )
+            target_syllables = max(45, int(video_duration_sec * 3.4))
+        elif recap_length == "condensed_hook":
+            mode_instruction = "Write a fast-paced 60s viral hook teaser recap"
+            target_syllables = max(35, min(200, int(video_duration_sec * 3.0)))
+        else:
+            mode_instruction = "Write a gripping, viral movie/anime recap narration evenly pacing key turning points"
+            target_syllables = max(35, int(video_duration_sec * 3.3))
+    elif processing_mode == "dubbing":
+        mode_instruction = "Translate and adapt the dialogue for natural lip-synced dubbing"
+    else:
+        mode_instruction = "Translate the transcript into accurate, punchy subtitle lines"
 
     system_prompt = f"""You are an elite {target_language} video narrator and scriptwriter (TBH Labs / Channel Myanmar urban conversational cadence).
 Task: {mode_instruction}.
@@ -895,44 +907,93 @@ def render_final_video(
             except Exception:
                 margin_v = 35
 
+        # Subtitle Color & Border Style Customization
+        sub_color_val = str(options.get("subtitle_color", "white")).lower()
+        if sub_color_val in ("yellow", "#ffff00", "#facc15"):
+            primary_colour = "&H0000FFFF"  # Yellow in BGR format
+        elif sub_color_val in ("cyan", "#00ffff", "#38bdf8"):
+            primary_colour = "&H00FFFF00"  # Cyan in BGR format
+        else:
+            primary_colour = "&H00FFFFFF"  # White in BGR format
+
+        sub_style_val = str(options.get("subtitle_style", "outline")).lower()
+        if sub_style_val == "box":
+            style_params = "BorderStyle=3,Outline=2,Shadow=1"
+        else:
+            style_params = "BorderStyle=1,Outline=3,Shadow=0"
+
         v_filters.append(
-            f"subtitles='{escaped_srt}':force_style='FontName=Myanmar Text,FontSize={font_size},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Outline=2,Shadow=1,MarginV={margin_v}'"
+            f"subtitles='{escaped_srt}':force_style='FontName=Myanmar Text,FontSize={font_size},PrimaryColour={primary_colour},OutlineColour=&H00000000,{style_params},MarginV={margin_v}'"
         )
 
     vf_chain = ",".join(v_filters) if v_filters else "null"
 
     ffmpeg_bin = get_ffmpeg_exe()
+    recap_len = options.get("recap_length", "full_length")
+    src_duration = float(media_info.get("duration", 0.0))
+    voice_vol = float(options.get("voice_volume", 1.0))
+    bg_vol = float(options.get("bg_volume", 0.15)) if options.get("sfx_only", True) else 0.0
+
     if voice_audio and voice_audio.exists():
-        cmd = [
-            ffmpeg_bin,
-            "-y",
-            "-stream_loop",
-            "-1",
-            "-i",
-            str(source_video),
-            "-i",
-            str(voice_audio),
-            "-vf",
-            vf_chain,
-            "-map",
-            "0:v:0",
-            "-map",
-            "1:a:0",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "22",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "128k",
-            "-shortest",
-            "-movflags",
-            "+faststart",
-            str(out_video),
-        ]
+        if recap_len == "full_length" and src_duration > 0:
+            # Full-Length Mode: 100% video runtime preserved. Duck background audio & pad voice.
+            if bg_vol > 0:
+                fc = f"[0:v]{vf_chain}[vout];[0:a]volume={bg_vol}[bg];[1:a]apad,volume={voice_vol}[voc];[voc][bg]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+                cmd = [
+                    ffmpeg_bin, "-y",
+                    "-i", str(source_video),
+                    "-i", str(voice_audio),
+                    "-filter_complex", fc,
+                    "-map", "[vout]", "-map", "[aout]",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                    "-c:a", "aac", "-b:a", "128k",
+                    "-t", f"{src_duration:.2f}",
+                    "-movflags", "+faststart",
+                    str(out_video),
+                ]
+            else:
+                fc = f"[0:v]{vf_chain}[vout];[1:a]apad,volume={voice_vol}[aout]"
+                cmd = [
+                    ffmpeg_bin, "-y",
+                    "-i", str(source_video),
+                    "-i", str(voice_audio),
+                    "-filter_complex", fc,
+                    "-map", "[vout]", "-map", "[aout]",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                    "-c:a", "aac", "-b:a", "128k",
+                    "-t", f"{src_duration:.2f}",
+                    "-movflags", "+faststart",
+                    str(out_video),
+                ]
+        else:
+            # Short hook or custom cut mode
+            if bg_vol > 0:
+                fc = f"[0:v]{vf_chain}[vout];[0:a]volume={bg_vol}[bg];[1:a]volume={voice_vol}[voc];[voc][bg]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+                cmd = [
+                    ffmpeg_bin, "-y",
+                    "-stream_loop", "-1", "-i", str(source_video),
+                    "-i", str(voice_audio),
+                    "-filter_complex", fc,
+                    "-map", "[vout]", "-map", "[aout]",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                    "-c:a", "aac", "-b:a", "128k",
+                    "-shortest",
+                    "-movflags", "+faststart",
+                    str(out_video),
+                ]
+            else:
+                cmd = [
+                    ffmpeg_bin, "-y",
+                    "-stream_loop", "-1", "-i", str(source_video),
+                    "-i", str(voice_audio),
+                    "-vf", vf_chain,
+                    "-map", "0:v:0", "-map", "1:a:0",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                    "-c:a", "aac", "-b:a", "128k",
+                    "-shortest",
+                    "-movflags", "+faststart",
+                    str(out_video),
+                ]
     else:
         cmd = [
             ffmpeg_bin,

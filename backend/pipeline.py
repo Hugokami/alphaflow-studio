@@ -169,7 +169,7 @@ def _download_youtube_cloud_fallback(vid: str, dest_dir: Path, ffmpeg_bin: str) 
     if not out_mp4.exists():
         raise RuntimeError(
             "YouTube blocked video stream download on this cloud serverless IP ('Sign in to confirm you’re not a bot'). "
-            "Please upload the video file directly (MP4/WebM/MOV) or run AlphaFlow locally via `python start_studio.py` "
+            "Please upload the video file directly (MP4/WebM/MOV) or run LTstudio locally via `python start_studio.py` "
             "where your residential IP downloads YouTube streams with zero restrictions."
         )
 
@@ -277,7 +277,7 @@ def transcribe_with_groq_whisper(video_path: Path, work_dir: Path) -> Dict[str, 
     )
 
     audio_bytes = audio_mp3.read_bytes()
-    boundary = f"----AlphaFlowBoundary{uuid.uuid4().hex}"
+    boundary = f"----LTstudioBoundary{uuid.uuid4().hex}"
 
     def _call_groq_stt(api_key: str) -> Dict[str, Any]:
         body = bytearray()
@@ -299,7 +299,7 @@ def transcribe_with_groq_whisper(video_path: Path, work_dir: Path) -> Dict[str, 
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": f"multipart/form-data; boundary={boundary}",
-                "User-Agent": "AlphaFlowStudio/2.0",
+                "User-Agent": "LTstudioStudio/2.0",
             },
             method="POST",
         )
@@ -376,7 +376,7 @@ CRITICAL RULES:
                     headers={
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json",
-                        "User-Agent": "AlphaFlowStudio/2.0",
+                        "User-Agent": "LTstudioStudio/2.0",
                     },
                     method="POST",
                 )
@@ -462,6 +462,303 @@ def write_srt_file(captions: List[Dict[str, Any]], srt_path: Path) -> Path:
     return srt_path
 
 
+def stitch_intro_outro(
+    main_video: Path,
+    intro_video: Optional[Path],
+    outro_video: Optional[Path],
+    out_video: Path,
+    aspect_ratio: str = "original",
+) -> Path:
+    """
+    Concatenates optional channel intro and outro videos with the main recap video,
+    normalizing resolution, SAR, framerate, and audio channels in a single FFmpeg pass.
+    """
+    ffmpeg_bin = get_ffmpeg_exe()
+    streams = []
+    if intro_video and intro_video.exists():
+        streams.append(intro_video)
+    streams.append(main_video)
+    if outro_video and outro_video.exists():
+        streams.append(outro_video)
+
+    if len(streams) == 1:
+        if main_video != out_video:
+            shutil.copyfile(str(main_video), str(out_video))
+        return out_video
+
+    if aspect_ratio == "9:16":
+        tw, th = 1080, 1920
+    elif aspect_ratio == "3:4":
+        tw, th = 1080, 1440
+    elif aspect_ratio == "1:1":
+        tw, th = 1080, 1080
+    else:
+        tw, th = 1280, 720
+
+    inputs_cmd = []
+    filter_parts = []
+    concat_inputs = []
+
+    for idx, s_path in enumerate(streams):
+        inputs_cmd.extend(["-i", str(s_path)])
+        filter_parts.append(
+            f"[{idx}:v]scale={tw}:{th}:force_original_aspect_ratio=decrease,pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=30[v{idx}];"
+            f"[{idx}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{idx}]"
+        )
+        concat_inputs.append(f"[v{idx}][a{idx}]")
+
+    joined_parts = ";".join(filter_parts)
+    joined_inputs = "".join(concat_inputs)
+    concat_filter = f"{joined_parts};{joined_inputs}concat=n={len(streams)}:v=1:a=1[outv][outa]"
+
+    cmd = [
+        ffmpeg_bin,
+        "-y",
+        *inputs_cmd,
+        "-filter_complex",
+        concat_filter,
+        "-map",
+        "[outv]",
+        "-map",
+        "[outa]",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "22",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-movflags",
+        "+faststart",
+        str(out_video),
+    ]
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        err_msg = e.stderr.decode("utf-8", errors="ignore") if e.stderr else str(e)
+        print("Stitch intro/outro error notice:", err_msg[:200])
+        if main_video != out_video:
+            shutil.copyfile(str(main_video), str(out_video))
+    return out_video
+
+
+def generate_thumbnail_slices(video_path: Path, out_dir: Path, duration: float = 60.0) -> List[Dict[str, Any]]:
+    """
+    Slices 3 candidate high-engagement thumbnails at 15%, 50%, and 85% duration using FFmpeg.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ffmpeg_bin = get_ffmpeg_exe()
+    timestamps = [
+        max(1.0, duration * 0.15),
+        max(2.0, duration * 0.50),
+        max(3.0, duration * 0.85),
+    ]
+    results = []
+    for i, ts in enumerate(timestamps):
+        out_jpg = out_dir / f"thumb_{i+1}.jpg"
+        try:
+            cmd = [
+                ffmpeg_bin,
+                "-y",
+                "-ss",
+                f"{ts:.2f}",
+                "-i",
+                str(video_path),
+                "-vframes",
+                "1",
+                "-q:v",
+                "2",
+                str(out_jpg),
+            ]
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if out_jpg.exists():
+                results.append({
+                    "index": i + 1,
+                    "timestamp": round(ts, 2),
+                    "filename": out_jpg.name,
+                    "size": out_jpg.stat().st_size
+                })
+        except Exception as e:
+            print(f"Thumbnail slice notice for ts {ts}:", e)
+    return results
+
+
+def generate_viral_social_package(
+    script: Dict[str, Any],
+    duration: float = 60.0,
+    title: str = "Video Recap",
+    language: str = "Burmese",
+) -> Dict[str, Any]:
+    """
+    Generates high-CTR viral titles, conversational Burmese TikTok/Reels captions, and trending hashtags.
+    """
+    recap_narration = script.get("full_narration", "")
+    captions = script.get("captions", [])
+    context_text = recap_narration[:1500] if recap_narration else " ".join([c.get("text", "") for c in captions[:25]])
+
+    prompt = f"""
+You are an elite viral social media strategist specializing in movie, anime, and story recaps for TikTok, Facebook Reels, and YouTube Shorts.
+The recap language is {language}.
+Context / Narration:
+"{context_text}"
+
+Generate a viral social growth package formatted strictly as JSON with:
+1. "titles": Exactly 3 curiosity-gap, high-CTR viral titles in {language} with dramatic hooks (e.g. "သူငယ်ချင်းတွေကို ကယ်ဖို့အတွက်...", "အဆုံးသတ်မှာ လူတိုင်းအံ့သြသွားစေမယ့်...").
+2. "caption": A high-retention TikTok/Reels caption in conversational, natural {language} with engaging emojis and a strong call-to-action (e.g. asking a discussion question or saying "Follow for Part 2!").
+3. "hashtags": An array of 8-12 trending hashtags (mix of English and Burmese, e.g. #movierecap, #burmeserecap, #foryou, #fyp, #tiktokmyanmar, #animerecap).
+
+Return ONLY valid JSON matching this schema:
+{{
+  "titles": ["Title 1", "Title 2", "Title 3"],
+  "caption": "Viral caption text with emojis...",
+  "hashtags": ["#movierecap", "#burmeserecap", "#fyp", "#foryou", "#tiktokmyanmar"]
+}}
+"""
+    def _call_gemini_viral(api_key: str) -> Dict[str, Any]:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.5, "responseMimeType": "application/json"}
+        }
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        text = body.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if m:
+            return json.loads(m.group(0))
+        return json.loads(text)
+
+    try:
+        data = key_pool.execute_with_failover("gemini", _call_gemini_viral)
+        if "titles" in data and "caption" in data and "hashtags" in data:
+            return data
+    except Exception as e:
+        print("Gemini viral package generation notice:", e)
+
+    clean_title = script.get("viral_title") or title or "ဒီဇာတ်ကားကတော့ မဖြစ်မနေ ကြည့်သင့်တယ်"
+    return {
+        "titles": [
+            f"🔥 {clean_title} — အဆုံးသတ်မှာ လူတိုင်းကြက်သီးထသွားစေမယ့် အလှည့်အပြောင်း",
+            f"😱 တစ်ခါမှ မမြင်ဖူးသေးတဲ့ အမိုက်စား ဇာတ်လမ်းအစအဆုံး ({clean_title})",
+            f"⚡ ဒီဇာတ်ကားကို မကြည့်ရသေးရင် သေချာပေါက် နောင်တရလိမ့်မယ်"
+        ],
+        "caption": f"ဒီဇာတ်လမ်းလေးကတော့ တကယ်ကို ရင်ခုန်စိတ်လှုပ်ရှားစရာ ကောင်းလွန်းပါတယ်။ အဆုံးထိ ကြည့်ပေးကြပါဦးနော် ✨\n\nနောက်ထပ်အပိုင်းတွေ ဆက်ကြည့်ချင်ရင် Like & Follow လုပ်ထားပေးကြပါ 🎬 👇",
+        "hashtags": ["#movierecap", "#burmeserecap", "#animerecap", "#tiktokmyanmar", "#recapmyanmar", "#fyp", "#foryou", "#viralvideo"]
+    }
+
+
+def detect_hardsubs_in_video(video_path: Path, work_dir: Path) -> Dict[str, Any]:
+    """
+    Extracts a frame from the video and uses Gemini Vision to detect hardcoded foreign
+    subtitles or watermarks, returning normalized percentage coordinates.
+    """
+    work_dir.mkdir(parents=True, exist_ok=True)
+    frame_jpg = work_dir / "detect_frame.jpg"
+    ffmpeg_bin = get_ffmpeg_exe()
+
+    try:
+        cmd = [
+            ffmpeg_bin,
+            "-y",
+            "-ss",
+            "00:00:04",
+            "-i",
+            str(video_path),
+            "-vframes",
+            "1",
+            "-q:v",
+            "2",
+            str(frame_jpg),
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        print("Frame extraction notice:", e)
+
+    if not frame_jpg.exists():
+        return {
+            "has_subtitles": True,
+            "box": {"x": 10, "y": 82, "w": 80, "h": 12},
+            "source": "heuristic_fallback"
+        }
+
+    try:
+        import base64
+        frame_bytes = frame_jpg.read_bytes()
+        frame_b64 = base64.b64encode(frame_bytes).decode("utf-8")
+        vision_prompt = """
+Examine this video frame carefully. Locate burned-in foreign hardcoded subtitles (Chinese, Thai, Japanese, English) or watermarks in the lower third or corners.
+Return a single bounding box in percentages (0 to 100) covering the subtitles:
+- x: percentage from left edge (e.g. 10)
+- y: percentage from top edge (e.g. 80)
+- w: width percentage (e.g. 80)
+- h: height percentage (e.g. 14)
+Return ONLY JSON:
+{"has_subtitles": true, "box": {"x": 10, "y": 82, "w": 80, "h": 12}}
+"""
+        def _call_gemini_vision(api_key: str) -> Dict[str, Any]:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+            payload = {
+                "contents": [
+                    {
+                        "parts": [
+                            {"text": vision_prompt},
+                            {
+                                "inline_data": {
+                                    "mime_type": "image/jpeg",
+                                    "data": frame_b64
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"}
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            text = body.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            m = re.search(r"\{.*\}", text, re.DOTALL)
+            if m:
+                return json.loads(m.group(0))
+            return json.loads(text)
+
+        data = key_pool.execute_with_failover("gemini", _call_gemini_vision)
+        if "box" in data:
+            b = data["box"]
+            return {
+                "has_subtitles": bool(data.get("has_subtitles", True)),
+                "box": {
+                    "x": float(b.get("x", 10)),
+                    "y": float(b.get("y", 82)),
+                    "w": float(b.get("w", 80)),
+                    "h": float(b.get("h", 12))
+                },
+                "source": "gemini_vision"
+            }
+    except Exception as gemini_err:
+        print("Gemini vision subtitle detection notice:", gemini_err)
+
+    return {
+        "has_subtitles": True,
+        "box": {"x": 10, "y": 82, "w": 80, "h": 12},
+        "source": "heuristic_fallback"
+    }
+
+
 def render_final_video(
     source_video: Path,
     voice_audio: Optional[Path],
@@ -495,6 +792,39 @@ def render_final_video(
     if options.get("auto_color"):
         v_filters.append("eq=contrast=1.05:brightness=0.02:saturation=1.08")
 
+    # 3b. Hardsub Blur Masks / Delogo Filters
+    if options.get("blur_enabled"):
+        blur_boxes = options.get("blur_boxes") or []
+        for b in blur_boxes:
+            try:
+                bx = float(b.get("x", 0))
+                by = float(b.get("y", 0))
+                bw = float(b.get("w", 0))
+                bh = float(b.get("h", 0))
+                if bx <= 1.0 and by <= 1.0 and bw <= 1.0 and bh <= 1.0:
+                    px = int(bx * w)
+                    py = int(by * h)
+                    pw = int(bw * w)
+                    ph = int(bh * h)
+                elif bx <= 100 and by <= 100 and bw <= 100 and bh <= 100:
+                    px = int((bx / 100.0) * w)
+                    py = int((by / 100.0) * h)
+                    pw = int((bw / 100.0) * w)
+                    ph = int((bh / 100.0) * h)
+                else:
+                    px, py, pw, ph = int(bx), int(by), int(bw), int(bh)
+
+                # Clamp with 1-pixel border to avoid delogo boundary assertion
+                px = max(1, min(w - 3, px))
+                py = max(1, min(h - 3, py))
+                pw = max(2, min(w - px - 1, pw))
+                ph = max(2, min(h - py - 1, ph))
+
+                if pw >= 4 and ph >= 4:
+                    v_filters.append(f"delogo=x={px}:y={py}:w={pw}:h={ph}")
+            except Exception as b_err:
+                print("Delogo blur box filter notice:", b_err)
+
     # 4. Aspect Ratio Sizing & Padding (Zero-crash integer coordinates)
     ratio = options.get("aspect_ratio", "original")
     if ratio == "9:16":
@@ -510,8 +840,19 @@ def render_final_video(
     if options.get("subtitle_enabled") and srt_path and srt_path.exists() and options.get("subtitle_type", "encode") == "encode":
         escaped_srt = str(srt_path).replace("\\", "/").replace(":", "\\:")
         font_size = int(options.get("subtitle_font_size", 55)) // 2
+        margin_v = int(options.get("subtitle_margin_v", 35))
+        if "subtitle_y" in options:
+            try:
+                sub_y = float(options["subtitle_y"])
+                if sub_y <= 1.0:
+                    sub_y *= 100.0
+                canvas_h = 1920 if ratio == "9:16" else (1440 if ratio == "3:4" else (1080 if ratio == "1:1" else h))
+                margin_v = max(15, int(((100.0 - sub_y) / 100.0) * canvas_h))
+            except Exception:
+                margin_v = 35
+
         v_filters.append(
-            f"subtitles='{escaped_srt}':force_style='FontName=Myanmar Text,FontSize={font_size},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Outline=2,Shadow=1,MarginV=35'"
+            f"subtitles='{escaped_srt}':force_style='FontName=Myanmar Text,FontSize={font_size},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Outline=2,Shadow=1,MarginV={margin_v}'"
         )
 
     vf_chain = ",".join(v_filters) if v_filters else "null"
@@ -647,6 +988,30 @@ def render_final_video(
             print("FFmpeg fallback render notice:", fb_stderr[:200])
             raise RuntimeError(f"FFmpeg render failure: {fb_stderr[-200:]}")
 
+    # 6. Channel Intro & Outro Video Stitching (if provided)
+    intro_path = options.get("intro_path")
+    outro_path = options.get("outro_path")
+    has_intro = bool(intro_path and Path(intro_path).exists())
+    has_outro = bool(outro_path and Path(outro_path).exists())
+    if has_intro or has_outro:
+        try:
+            core_rendered = out_video.parent / f"core_{out_video.name}"
+            if out_video.exists():
+                shutil.move(str(out_video), str(core_rendered))
+                stitch_intro_outro(
+                    main_video=core_rendered,
+                    intro_video=Path(intro_path) if has_intro else None,
+                    outro_video=Path(outro_path) if has_outro else None,
+                    out_video=out_video,
+                    aspect_ratio=ratio,
+                )
+                if core_rendered.exists():
+                    core_rendered.unlink(missing_ok=True)
+        except Exception as stitch_err:
+            print("Intro/Outro stitch notice:", stitch_err)
+            if not out_video.exists() and core_rendered.exists():
+                shutil.move(str(core_rendered), str(out_video))
+
     return out_video
 
 
@@ -681,10 +1046,10 @@ def push_to_telegram_storage(
     if not chat_id:
         return {
             "pushed": False,
-            "reason": "Send /start to @hyugoustoragebot on Telegram once so AlphaFlow can auto-detect your Chat ID!",
+            "reason": "Send /start to @hyugoustoragebot on Telegram once so LTstudio can auto-detect your Chat ID!",
         }
 
-    boundary = f"----AlphaFlowTG{uuid.uuid4().hex}"
+    boundary = f"----LTstudioTG{uuid.uuid4().hex}"
     body = bytearray()
     for k, v in [("chat_id", chat_id), ("caption", caption[:950])]:
         body.extend(f"--{boundary}\r\n".encode())

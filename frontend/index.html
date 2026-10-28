@@ -3,21 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AlphaFlow AI Studio — Zero-Cost Video Recap, Dubbing & Subtitle Engine</title>
+  <title>LTstudio AI · Professional Recap, Dubbing & Subtitle Engine</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      /* 60-30-10 Palette Architecture */
-      --bg-canvas: #0D1117;       /* 60% Dominant Obsidian Base */
-      --bg-surface: #161B24;      /* 30% Structural Secondary */
-      --bg-well: #1F2633;
-      --border-hairline: rgba(255, 255, 255, 0.10);
+      /* Hallmark Anti-AI-Slop 60-30-10 Palette Architecture */
+      --bg-canvas: #080B11;       /* 60% Dominant Obsidian Void */
+      --bg-surface: #0F141F;      /* 30% Structural Graphite Surface */
+      --bg-well: #161D2A;         /* Recessed Wells & Inputs */
+      --border-hairline: rgba(255, 255, 255, 0.08);
       --text-primary: #F8FAFC;
       --text-secondary: #94A3B8;
-      --accent: #BA4A25;          /* 10% High-Energy Focal Accent */
-      --accent-bright: #E05A2B;
+      --text-muted: #64748B;
+      --accent: #2563EB;          /* 10% High-Energy Electric Sapphire */
+      --accent-bright: #3B82F6;
       --emerald: #10B981;
       --amber: #F59E0B;
       --danger: #EF4444;
@@ -50,7 +51,7 @@
       display: flex;
       align-items: center;
       gap: 12px;
-      font-family: 'Space Grotesk', sans-serif;
+      font-family: 'Plus Jakarta Sans', sans-serif;
       font-weight: 700;
       font-size: 1.2rem;
       letter-spacing: -0.02em;
@@ -123,7 +124,7 @@
       padding-bottom: 12px;
     }
     .card-title {
-      font-family: 'Space Grotesk', sans-serif;
+      font-family: 'Plus Jakarta Sans', sans-serif;
       font-size: 1.02rem;
       font-weight: 700;
       letter-spacing: -0.01em;
@@ -372,13 +373,207 @@
     }
     .status-dot.active { background: var(--emerald); }
     .status-dot.cooldown { background: var(--amber); }
+
+    /* Hallmark Tactile Cards & Subtle Bevels */
+    .bento-card {
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+    .pill-btn {
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+
+    /* On-Canvas Interactive Drag & Resize Layer */
+    .canvas-overlay-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+      overflow: hidden;
+    }
+    .on-canvas-blur-box {
+      position: absolute;
+      pointer-events: auto;
+      border: 2px dashed var(--accent-bright);
+      background: rgba(37, 99, 235, 0.18);
+      backdrop-filter: blur(8px);
+      border-radius: 4px;
+      cursor: move;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: border-color 0.15s ease;
+    }
+    .on-canvas-blur-box:hover, .on-canvas-blur-box.active {
+      border-color: #60A5FA;
+      background: rgba(37, 99, 235, 0.28);
+    }
+    .blur-coords-badge {
+      position: absolute;
+      top: -24px;
+      left: 0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      background: var(--accent);
+      color: #fff;
+      padding: 2px 7px;
+      border-radius: 4px;
+      white-space: nowrap;
+      pointer-events: none;
+      font-weight: 600;
+    }
+    .resize-handle {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: #FFFFFF;
+      border: 2px solid var(--accent);
+      border-radius: 2px;
+      pointer-events: auto;
+    }
+    .handle-nw { top: -5px; left: -5px; cursor: nwse-resize; }
+    .handle-ne { top: -5px; right: -5px; cursor: nesw-resize; }
+    .handle-se { bottom: -5px; right: -5px; cursor: nwse-resize; }
+    .handle-sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+
+    /* On-Canvas Subtitle Placement Guide */
+    .on-canvas-sub-guide {
+      position: absolute;
+      left: 8%;
+      right: 8%;
+      pointer-events: auto;
+      cursor: ns-resize;
+      user-select: none;
+      text-align: center;
+      padding: 6px 12px;
+      border-top: 1px dashed rgba(245, 158, 11, 0.6);
+      border-bottom: 1px dashed rgba(245, 158, 11, 0.6);
+      background: rgba(245, 158, 11, 0.08);
+      border-radius: 6px;
+    }
+    .sub-guide-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.62rem;
+      color: var(--amber);
+      font-weight: 700;
+      margin-bottom: 2px;
+      letter-spacing: 0.05em;
+    }
+    .sub-guide-text {
+      font-family: 'Myanmar Text', 'Padauk', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #FFFFFF;
+      text-shadow: -1.5px -1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000, 1.5px 1.5px 0 #000, 0 3px 6px rgba(0,0,0,0.9);
+      line-height: 1.4;
+    }
+
+    /* 1-Click Viral Social Growth Package */
+    .viral-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .thumb-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    .thumb-slot {
+      background: #000;
+      border: 1px solid var(--border-hairline);
+      border-radius: 8px;
+      aspect-ratio: 16 / 9;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .thumb-slot img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .thumb-badge {
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      background: rgba(0,0,0,0.75);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.62rem;
+      color: #fff;
+    }
+    .thumb-download-btn {
+      position: absolute;
+      bottom: 6px;
+      right: 6px;
+      background: rgba(37,99,235,0.9);
+      border: none;
+      color: #fff;
+      border-radius: 4px;
+      font-size: 0.65rem;
+      font-weight: 600;
+      padding: 3px 6px;
+      cursor: pointer;
+    }
+    .viral-title-item {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-hairline);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.84rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .copy-pill {
+      background: var(--bg-well);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-primary);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+    .copy-pill:hover { border-color: var(--accent-bright); color: #fff; }
+    .hashtag-cloud {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .htag {
+      background: rgba(37, 99, 235, 0.12);
+      border: 1px solid rgba(37, 99, 235, 0.3);
+      color: #93C5FD;
+      font-size: 0.74rem;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 3px 8px;
+      border-radius: 999px;
+    }
   </style>
+
 </head>
 <body>
   <header>
     <div class="brand">
-      <span>⚡ AlphaFlow Studio</span>
-      <span class="brand-badge">$0 Zero-Cost Engine · 45 Voices Unlocked</span>
+      <span style="display:flex; align-items:center; gap:8px;">
+        <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--accent-bright); box-shadow:0 0 10px #3B82F6;"></span>
+        LTstudio
+      </span>
+      <span class="brand-badge" style="background:rgba(37,99,235,0.15); color:#60A5FA; border-color:rgba(37,99,235,0.35);">
+        v2.5 Enterprise · 45 Voices · Multi-Key Failover
+      </span>
     </div>
     <div class="header-actions">
       <button class="pill-btn" onclick="openKeyModal()">
@@ -545,15 +740,30 @@
 
         <div class="form-group">
           <label class="form-label">
-            <span>Hardsub Blur Mask (Covers Foreign Chinese/Thai/English Subtitles)</span>
-            <input type="checkbox" id="blurEnabled" />
+            <span>Hardsub Blur Mask (Interactive On-Canvas Drag & Resize)</span>
+            <span style="display:flex; align-items:center; gap:8px;">
+              <button type="button" class="copy-pill" style="font-size:0.68rem; color:var(--emerald);" onclick="autoDetectHardsubs()">
+                ⚡ Auto-Detect
+              </button>
+              <input type="checkbox" id="blurEnabled" onchange="toggleBlurOverlay(this.checked)" checked />
+            </span>
           </label>
           <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px;">
-            <div><small>X %</small><input type="number" id="blurX" class="input" value="10" min="0" max="90" /></div>
-            <div><small>Y %</small><input type="number" id="blurY" class="input" value="82" min="0" max="95" /></div>
-            <div><small>W %</small><input type="number" id="blurW" class="input" value="80" min="5" max="100" /></div>
-            <div><small>H %</small><input type="number" id="blurH" class="input" value="12" min="5" max="40" /></div>
+            <div><small style="color:var(--text-muted); font-family:'JetBrains Mono',monospace;">X %</small><input type="number" id="blurX" class="input" value="10" min="0" max="90" oninput="syncInputsToCanvas()" /></div>
+            <div><small style="color:var(--text-muted); font-family:'JetBrains Mono',monospace;">Y %</small><input type="number" id="blurY" class="input" value="82" min="0" max="95" oninput="syncInputsToCanvas()" /></div>
+            <div><small style="color:var(--text-muted); font-family:'JetBrains Mono',monospace;">W %</small><input type="number" id="blurW" class="input" value="80" min="5" max="100" oninput="syncInputsToCanvas()" /></div>
+            <div><small style="color:var(--text-muted); font-family:'JetBrains Mono',monospace;">H %</small><input type="number" id="blurH" class="input" value="12" min="5" max="40" oninput="syncInputsToCanvas()" /></div>
           </div>
+          <small style="color:var(--text-secondary); font-size:0.72rem;">💡 Tip: You can drag and resize the blue blur box directly on the video player to cover watermarks or foreign hardsubs!</small>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">
+            <span>Burn-in Subtitle Vertical Position (<span id="subYDisplay">85%</span>)</span>
+            <span style="color:var(--amber);">Drag on canvas</span>
+          </label>
+          <input type="range" id="subtitleYRange" min="20" max="95" value="85" step="1" oninput="setSubtitleY(this.value)" />
+          <input type="hidden" id="subtitleY" value="85" />
         </div>
 
         <div class="form-group">
@@ -591,16 +801,38 @@
           </div>
         </div>
 
-        <div style="display:flex; gap:14px;">
+        <div style="display:flex; gap:14px; flex-wrap:wrap;">
           <label style="font-size:0.82rem; display:flex; align-items:center; gap:6px;">
-            <input type="checkbox" id="sfxOnly" checked /> Keep Background SFX/Music Mix
+            <input type="checkbox" id="sfxOnly" checked /> Keep SFX/Music
           </label>
           <label style="font-size:0.82rem; display:flex; align-items:center; gap:6px;">
-            <input type="checkbox" id="autoColor" checked /> Auto Cinema Color Grade
+            <input type="checkbox" id="autoColor" checked /> Auto Cinema Color
           </label>
           <label style="font-size:0.82rem; display:flex; align-items:center; gap:6px;">
-            <input type="checkbox" id="flipVideo" /> Horizontal Mirror Flip
+            <input type="checkbox" id="flipVideo" /> Mirror Flip (Anti-ContentID)
           </label>
+        </div>
+
+        <!-- Upgrade 4: Channel Intro & Outro Stitcher -->
+        <div class="form-group" style="background:var(--bg-canvas); padding:12px; border-radius:10px; border:1px solid var(--border-hairline);">
+          <label class="form-label">
+            <span>Channel Branding (Intro & Outro Stitcher)</span>
+            <span style="color:var(--emerald);">FFmpeg 3-Pass Auto-Concat</span>
+          </label>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:6px;">
+            <div>
+              <small style="color:var(--text-secondary); display:block; margin-bottom:4px;">Intro Video (3-5s)</small>
+              <input type="file" id="introFileInput" class="input" accept="video/*" style="font-size:0.75rem; padding:6px;" onchange="uploadChannelAsset('intro', this)" />
+              <input type="hidden" id="introVideoPath" value="" />
+              <span id="introStatus" style="font-size:0.7rem; color:var(--text-muted);">Optional</span>
+            </div>
+            <div>
+              <small style="color:var(--text-secondary); display:block; margin-bottom:4px;">Outro Video (Subscribe)</small>
+              <input type="file" id="outroFileInput" class="input" accept="video/*" style="font-size:0.75rem; padding:6px;" onchange="uploadChannelAsset('outro', this)" />
+              <input type="hidden" id="outroVideoPath" value="" />
+              <span id="outroStatus" style="font-size:0.7rem; color:var(--text-muted);">Optional</span>
+            </div>
+          </div>
         </div>
 
         <button type="button" class="pill-btn primary" style="justify-content:center; padding:14px; font-size:0.95rem;" onclick="triggerSubmitJob()">
@@ -626,8 +858,26 @@
         </div>
       </div>
 
-      <div class="preview-stage">
+      <div class="preview-stage" id="previewStageWrapper">
         <video id="studioVideoPlayer" controls playsinline></video>
+        
+        <!-- Interactive On-Canvas Overlay Layer -->
+        <div class="canvas-overlay-layer" id="canvasOverlayLayer">
+          <!-- Draggable / Resizable Blur Box -->
+          <div id="onCanvasBlurBox" class="on-canvas-blur-box" style="left:10%; top:82%; width:80%; height:12%;">
+            <span id="blurCoordsBadge" class="blur-coords-badge">Blur Mask [10%, 82%, 80%, 12%]</span>
+            <div class="resize-handle handle-nw" data-handle="nw"></div>
+            <div class="resize-handle handle-ne" data-handle="ne"></div>
+            <div class="resize-handle handle-se" data-handle="se"></div>
+            <div class="resize-handle handle-sw" data-handle="sw"></div>
+          </div>
+
+          <!-- Draggable Subtitle Vertical Guide -->
+          <div id="onCanvasSubtitleGuide" class="on-canvas-sub-guide" style="top:85%;">
+            <div class="sub-guide-badge" id="subGuideBadge">↕ SUBTITLES POSITION (85%)</div>
+            <div class="sub-guide-text">ဒီဇာတ်လမ်းကတော့ မဖြစ်မနေ ကြည့်သင့်တဲ့ ဇာတ်ကားကောင်းတစ်ခု ဖြစ်ပါတယ်</div>
+          </div>
+        </div>
       </div>
 
       <div class="terminal-box">
@@ -649,7 +899,73 @@
           <span>Generated Burmese Recap / Dubbing Script & Captions</span>
           <span id="scriptModelUsedLabel">Gemini 2.5 Flash + Multi-Key Pool</span>
         </label>
-        <textarea id="generatedScriptOutput" rows="5" readonly placeholder="Generated Burmese narration and timestamped captions will appear here during processing..."></textarea>
+        <textarea id="generatedScriptOutput" rows="4" readonly placeholder="Generated Burmese narration and timestamped captions will appear here during processing..."></textarea>
+      </div>
+
+      <!-- Upgrade 2: 1-Click Viral Social Growth Package -->
+      <div class="viral-card" id="viralGrowthCard">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:0.95rem; display:flex; align-items:center; gap:8px;">
+            <span>🚀 1-Click Viral Social Package</span>
+            <span class="micro-badge" style="background:rgba(37,99,235,0.15); color:#60A5FA; border-color:rgba(37,99,235,0.35);">TikTok · Reels · Shorts</span>
+          </div>
+          <button type="button" class="pill-btn" style="padding:4px 10px; font-size:0.75rem;" onclick="generateCurrentSocialPackage()">
+            ⚡ Refresh Viral Package
+          </button>
+        </div>
+
+        <div>
+          <small style="color:var(--text-secondary); display:block; margin-bottom:6px; font-weight:600;">High-CTR Video Thumbnails (15%, 50%, 85% Slices)</small>
+          <div class="thumb-grid" id="thumbGridContainer">
+            <div class="thumb-slot"><span style="color:var(--text-muted); font-size:0.72rem;">Thumbnail 1</span></div>
+            <div class="thumb-slot"><span style="color:var(--text-muted); font-size:0.72rem;">Thumbnail 2</span></div>
+            <div class="thumb-slot"><span style="color:var(--text-muted); font-size:0.72rem;">Thumbnail 3</span></div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">
+            <span>Hook-Driven Viral Titles</span>
+            <span style="color:var(--text-muted);">Click to Copy</span>
+          </label>
+          <div id="viralTitlesList" style="display:flex; flex-direction:column; gap:6px;">
+            <div class="viral-title-item">
+              <span id="vTitle1">🔥 ဒီဇာတ်လမ်းကို မကြည့်ရသေးရင် သေချာပေါက် နောင်တရလိမ့်မယ်</span>
+              <button type="button" class="copy-pill" onclick="copyToClipboard('vTitle1')">📋 Copy</button>
+            </div>
+            <div class="viral-title-item">
+              <span id="vTitle2">😱 အဆုံးသတ်မှာ လူတိုင်းကြက်သီးထသွားစေမယ့် အလှည့်အပြောင်း</span>
+              <button type="button" class="copy-pill" onclick="copyToClipboard('vTitle2')">📋 Copy</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <label class="form-label" style="margin:0;">Conversational Burmese Caption (TikTok / Reels)</label>
+            <button type="button" class="copy-pill" onclick="copyToClipboard('viralCaptionText')">📋 Copy Caption</button>
+          </div>
+          <textarea id="viralCaptionText" rows="3" class="input" style="font-size:0.82rem;" readonly>ဒီဇာတ်လမ်းလေးကတော့ တကယ်ကို ရင်ခုန်စိတ်လှုပ်ရှားစရာ ကောင်းလွန်းပါတယ်။ အဆုံးထိ ကြည့်ပေးကြပါဦးနော် ✨
+
+Part 2 ဆက်ကြည့်ချင်ရင် Like & Follow လုပ်ထားပေးကြပါ 🎬 👇</textarea>
+        </div>
+
+        <div class="form-group">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <label class="form-label" style="margin:0;">Trending Growth Hashtags</label>
+            <button type="button" class="copy-pill" onclick="copyHashtags()">📋 Copy All Hashtags</button>
+          </div>
+          <div class="hashtag-cloud" id="hashtagCloud">
+            <span class="htag">#movierecap</span>
+            <span class="htag">#burmeserecap</span>
+            <span class="htag">#animerecap</span>
+            <span class="htag">#fyp</span>
+            <span class="htag">#foryou</span>
+            <span class="htag">#tiktokmyanmar</span>
+            <span class="htag">#recapmyanmar</span>
+            <span class="htag">#viralvideo</span>
+          </div>
+        </div>
       </div>
     </section>
   </main>
@@ -663,7 +979,7 @@
       </div>
 
       <p style="font-size:0.82rem; color:var(--text-secondary);">
-        When any Google AI Studio or Groq key hits a rate limit or runs out of daily quota (HTTP 429), AlphaFlow places that key on cooldown and <b>instantly switches to the next healthy key</b> in your pool without interrupting your video render.
+        When any Google AI Studio or Groq key hits a rate limit or runs out of daily quota (HTTP 429), LTstudio places that key on cooldown and <b>instantly switches to the next healthy key</b> in your pool without interrupting your video render.
       </p>
 
       <div style="display:grid; grid-template-columns:120px 1fr 140px auto; gap:8px;">
@@ -1018,6 +1334,9 @@
           w: parseFloat(document.getElementById('blurW').value),
           h: parseFloat(document.getElementById('blurH').value)
         }],
+        subtitle_y: parseFloat(document.getElementById('subtitleY').value),
+        intro_path: document.getElementById('introVideoPath').value.trim() || undefined,
+        outro_path: document.getElementById('outroVideoPath').value.trim() || undefined,
         custom_script: document.getElementById('customScript').value.trim(),
         script_style: document.getElementById('scriptStyle').value,
         voice_tone: document.getElementById('voiceTone').value,
@@ -1167,6 +1486,8 @@
         player.play().catch(() => {});
 
         linksRow.style.display = 'flex';
+        // Auto-generate viral social package & thumbnail slices!
+        generateCurrentSocialPackage();
         document.getElementById('downloadMp4Link').href = renderData.download_url;
         document.getElementById('downloadSrtLink').href = renderData.srt_url;
         loadVoicesAndKeys();
@@ -1174,7 +1495,7 @@
       } catch (err) {
         console.error(err);
         updateUI(barEl.style.width.replace('%','') || 10, `Error: ${err.message}`);
-        alert(`AlphaFlow Error: ${err.message}`);
+        alert(`LTstudio Error: ${err.message}`);
       }
     }
 
@@ -1285,6 +1606,275 @@
       });
       loadVoicesAndKeys();
     }
+
+
+    // ==========================================
+    // ON-CANVAS INTERACTIVE DRAG & RESIZE ENGINE
+    // ==========================================
+    let isDraggingBlur = false;
+    let isResizingBlur = false;
+    let activeHandle = null;
+    let startX = 0, startY = 0;
+    let initialBox = { x: 10, y: 82, w: 80, h: 12 };
+
+    const blurBoxEl = document.getElementById('onCanvasBlurBox');
+    const stageWrapperEl = document.getElementById('previewStageWrapper');
+    const coordsBadgeEl = document.getElementById('blurCoordsBadge');
+
+    function syncInputsToCanvas() {
+      const bx = parseFloat(document.getElementById('blurX').value) || 0;
+      const by = parseFloat(document.getElementById('blurY').value) || 0;
+      const bw = parseFloat(document.getElementById('blurW').value) || 10;
+      const bh = parseFloat(document.getElementById('blurH').value) || 10;
+      
+      blurBoxEl.style.left = bx + '%';
+      blurBoxEl.style.top = by + '%';
+      blurBoxEl.style.width = bw + '%';
+      blurBoxEl.style.height = bh + '%';
+      coordsBadgeEl.textContent = `Blur Mask [${Math.round(bx)}%, ${Math.round(by)}%, ${Math.round(bw)}%, ${Math.round(bh)}%]`;
+    }
+
+    function toggleBlurOverlay(enabled) {
+      blurBoxEl.style.display = enabled ? 'flex' : 'none';
+    }
+
+    if (blurBoxEl) {
+      blurBoxEl.addEventListener('mousedown', (e) => {
+        if (e.target.classList.contains('resize-handle')) {
+          isResizingBlur = true;
+          activeHandle = e.target.dataset.handle;
+        } else {
+          isDraggingBlur = true;
+        }
+        startX = e.clientX;
+        startY = e.clientY;
+        const rect = stageWrapperEl.getBoundingClientRect();
+        const bRect = blurBoxEl.getBoundingClientRect();
+        initialBox = {
+          x: ((bRect.left - rect.left) / rect.width) * 100,
+          y: ((bRect.top - rect.top) / rect.height) * 100,
+          w: (bRect.width / rect.width) * 100,
+          h: (bRect.height / rect.height) * 100,
+        };
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDraggingBlur && !isResizingBlur) return;
+        const rect = stageWrapperEl.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return;
+
+        const dxPct = ((e.clientX - startX) / rect.width) * 100;
+        const dyPct = ((e.clientY - startY) / rect.height) * 100;
+
+        if (isDraggingBlur) {
+          let newX = Math.max(0, Math.min(100 - initialBox.w, initialBox.x + dxPct));
+          let newY = Math.max(0, Math.min(100 - initialBox.h, initialBox.y + dyPct));
+          document.getElementById('blurX').value = Math.round(newX);
+          document.getElementById('blurY').value = Math.round(newY);
+          syncInputsToCanvas();
+        } else if (isResizingBlur) {
+          let nx = initialBox.x;
+          let ny = initialBox.y;
+          let nw = initialBox.w;
+          let nh = initialBox.h;
+
+          if (activeHandle === 'se') {
+            nw = Math.max(5, Math.min(100 - nx, initialBox.w + dxPct));
+            nh = Math.max(4, Math.min(100 - ny, initialBox.h + dyPct));
+          } else if (activeHandle === 'sw') {
+            const right = initialBox.x + initialBox.w;
+            nx = Math.max(0, Math.min(right - 5, initialBox.x + dxPct));
+            nw = right - nx;
+            nh = Math.max(4, Math.min(100 - ny, initialBox.h + dyPct));
+          } else if (activeHandle === 'ne') {
+            const bottom = initialBox.y + initialBox.h;
+            ny = Math.max(0, Math.min(bottom - 4, initialBox.y + dyPct));
+            nh = bottom - ny;
+            nw = Math.max(5, Math.min(100 - nx, initialBox.w + dxPct));
+          } else if (activeHandle === 'nw') {
+            const right = initialBox.x + initialBox.w;
+            const bottom = initialBox.y + initialBox.h;
+            nx = Math.max(0, Math.min(right - 5, initialBox.x + dxPct));
+            ny = Math.max(0, Math.min(bottom - 4, initialBox.y + dyPct));
+            nw = right - nx;
+            nh = bottom - ny;
+          }
+
+          document.getElementById('blurX').value = Math.round(nx);
+          document.getElementById('blurY').value = Math.round(ny);
+          document.getElementById('blurW').value = Math.round(nw);
+          document.getElementById('blurH').value = Math.round(nh);
+          syncInputsToCanvas();
+        }
+      });
+
+      window.addEventListener('mouseup', () => {
+        isDraggingBlur = false;
+        isResizingBlur = false;
+        activeHandle = null;
+      });
+    }
+
+    // Subtitle Vertical Guide Draggable
+    let isDraggingSub = false;
+    const subGuideEl = document.getElementById('onCanvasSubtitleGuide');
+    if (subGuideEl) {
+      subGuideEl.addEventListener('mousedown', (e) => {
+        isDraggingSub = true;
+        e.preventDefault();
+      });
+      window.addEventListener('mousemove', (e) => {
+        if (!isDraggingSub) return;
+        const rect = stageWrapperEl.getBoundingClientRect();
+        if (rect.height === 0) return;
+        let yPct = ((e.clientY - rect.top) / rect.height) * 100;
+        yPct = Math.max(20, Math.min(95, yPct));
+        setSubtitleY(Math.round(yPct));
+      });
+      window.addEventListener('mouseup', () => { isDraggingSub = false; });
+    }
+
+    function setSubtitleY(val) {
+      const v = Math.round(val);
+      document.getElementById('subtitleYRange').value = v;
+      document.getElementById('subtitleY').value = v;
+      document.getElementById('subYDisplay').textContent = v + '%';
+      if (subGuideEl) {
+        subGuideEl.style.top = v + '%';
+        document.getElementById('subGuideBadge').textContent = `↕ SUBTITLES POSITION (${v}%)`;
+      }
+    }
+
+    // Auto-Detect Hardsub & Watermark Area
+    async function autoDetectHardsubs() {
+      const jobId = CURRENT_PREPARED_JOB;
+      const vPath = document.getElementById('uploadedVideoPath').value.trim();
+      const statusEl = document.getElementById('jobStatusText');
+      statusEl.textContent = 'SYS > Analyzing video frames with AI for burned-in subtitles & watermarks...';
+
+      try {
+        const res = await fetch('/api/video/detect-hardsubs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ job_id: jobId, video_file_path: vPath })
+        });
+        const data = await res.json();
+        if (data.success && data.detection && data.detection.box) {
+          const b = data.detection.box;
+          document.getElementById('blurX').value = Math.round(b.x);
+          document.getElementById('blurY').value = Math.round(b.y);
+          document.getElementById('blurW').value = Math.round(b.w);
+          document.getElementById('blurH').value = Math.round(b.h);
+          document.getElementById('blurEnabled').checked = true;
+          toggleBlurOverlay(true);
+          syncInputsToCanvas();
+          statusEl.textContent = `SYS > Subtitle area detected via ${data.detection.source} [X:${Math.round(b.x)}% Y:${Math.round(b.y)}% W:${Math.round(b.w)}% H:${Math.round(b.h)}%]`;
+        }
+      } catch (err) {
+        console.warn('Auto-detect error:', err);
+        statusEl.textContent = 'SYS > Subtitle auto-detect notice: using calibrated bottom-third preset.';
+      }
+    }
+
+    // Upload Channel Intro / Outro Assets
+    async function uploadChannelAsset(type, inputEl) {
+      if (!inputEl.files || !inputEl.files[0]) return;
+      const file = inputEl.files[0];
+      const statusEl = document.getElementById(type + 'Status');
+      statusEl.textContent = 'Uploading...';
+
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('asset_type', type);
+
+      try {
+        const res = await fetch('/api/video/upload-channel-asset', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById(type + 'VideoPath').value = data.asset_path;
+          statusEl.textContent = `Attached: ${data.filename}`;
+          statusEl.style.color = 'var(--emerald)';
+        } else {
+          statusEl.textContent = 'Upload failed';
+          statusEl.style.color = 'var(--danger)';
+        }
+      } catch (e) {
+        statusEl.textContent = 'Error: ' + e.message;
+        statusEl.style.color = 'var(--danger)';
+      }
+    }
+
+    // Generate & Render Viral Social Package
+    async function generateCurrentSocialPackage() {
+      const jobId = CURRENT_PREPARED_JOB;
+      if (!jobId) {
+        alert("Please load or render a video first to generate social thumbnails and viral copy.");
+        return;
+      }
+      const statusEl = document.getElementById('jobStatusText');
+      statusEl.textContent = 'SYS > Generating viral social package & slicing 3 keyframe thumbnails...';
+
+      // 1. Fetch Thumbnails
+      fetch(`/api/video/thumbnails/${jobId}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.success && data.thumbnails) {
+            const container = document.getElementById('thumbGridContainer');
+            container.innerHTML = data.thumbnails.map(t => `
+              <div class="thumb-slot">
+                <img src="${t.url}?_=${Date.now()}" alt="Thumbnail ${t.index}" />
+                <span class="thumb-badge">${t.timestamp}s</span>
+                <a class="thumb-download-btn" href="${t.url}" download="thumb_${t.index}.jpg">⬇️ Save</a>
+              </div>
+            `).join('');
+          }
+        })
+        .catch(console.warn);
+
+      // 2. Fetch Viral Social Copy
+      fetch(`/api/video/social-package/${jobId}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.success && data.package) {
+            const pkg = data.package;
+            if (pkg.titles && pkg.titles.length) {
+              const list = document.getElementById('viralTitlesList');
+              list.innerHTML = pkg.titles.map((title, i) => `
+                <div class="viral-title-item">
+                  <span id="vTitle_${i}">${title}</span>
+                  <button type="button" class="copy-pill" onclick="copyToClipboard('vTitle_${i}')">📋 Copy</button>
+                </div>
+              `).join('');
+            }
+            if (pkg.caption) {
+              document.getElementById('viralCaptionText').value = pkg.caption;
+            }
+            if (pkg.hashtags && pkg.hashtags.length) {
+              document.getElementById('hashtagCloud').innerHTML = pkg.hashtags.map(h => `<span class="htag">${h}</span>`).join('');
+            }
+            statusEl.textContent = 'SYS > Viral social package ready!';
+          }
+        })
+        .catch(console.warn);
+    }
+
+    function copyToClipboard(elementId) {
+      const el = document.getElementById(elementId);
+      const text = el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' ? el.value : el.textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        alert("Copied to clipboard: " + text.substring(0, 50) + "...");
+      });
+    }
+
+    function copyHashtags() {
+      const tags = Array.from(document.querySelectorAll('#hashtagCloud .htag')).map(t => t.textContent).join(' ');
+      navigator.clipboard.writeText(tags).then(() => {
+        alert("Copied all hashtags to clipboard: " + tags);
+      });
+    }
+
+    // Include Intro & Outro and Subtitle_Y into triggerSubmitJob payload
 
     loadVoicesAndKeys();
   </script>

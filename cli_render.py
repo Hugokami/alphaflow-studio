@@ -34,12 +34,12 @@ async def run_cli_job(args: argparse.Namespace) -> dict:
         video_duration_sec=duration_sec,
         requested_model=args.gemini_tts_model,
     )
-    print(f"[AlphaFlow CLI] Duration={duration_sec:.1f}s -> Smart Routed TTS Models={routed_models}")
+    print(f"[LTstudio CLI] Duration={duration_sec:.1f}s -> Smart Routed TTS Models={routed_models}")
 
     transcript = transcribe_with_groq_whisper(media_info["video_path"], job_dir)
     if args.custom_script:
         script_res = {
-            "viral_title": media_info.get("title", "AlphaFlow Recap")[:25],
+            "viral_title": media_info.get("title", "LTstudio Recap")[:25],
             "hook_line": args.custom_script[:60],
             "full_narration": args.custom_script,
             "captions": [
@@ -87,7 +87,7 @@ async def run_cli_job(args: argparse.Namespace) -> dict:
 
     tg_info = push_to_telegram_storage(
         out_video,
-        caption=f"🎬 {script_res.get('viral_title', 'AlphaFlow Render')} | Voice: {args.voice} ({tts_res['model_used']})",
+        caption=f"🎬 {script_res.get('viral_title', 'LTstudio Render')} | Voice: {args.voice} ({tts_res['model_used']})",
     )
 
     summary = {
@@ -110,14 +110,14 @@ async def run_cli_job(args: argparse.Namespace) -> dict:
             )
             urllib.request.urlopen(req, timeout=15).read()
         except Exception as exc:
-            print(f"[AlphaFlow CLI] Webhook callback warning: {exc}")
+            print(f"[LTstudio CLI] Webhook callback warning: {exc}")
 
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return summary
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="AlphaFlow Zero-Cost CLI & GitHub Actions Worker")
+    parser = argparse.ArgumentParser(description="LTstudio Zero-Cost CLI & GitHub Actions Worker")
     parser.add_argument("--job-id", default="cli_job_01")
     parser.add_argument("--url", default="")
     parser.add_argument("--video-file", default="")

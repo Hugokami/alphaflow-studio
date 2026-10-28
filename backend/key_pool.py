@@ -9,14 +9,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # In serverless environments like Vercel or read-only filesystems, use /tmp for runtime caches and writable state
 if os.environ.get("VERCEL"):
-    DATA_DIR = Path("/tmp/alphaflow_data")
+    DATA_DIR = Path("/tmp/ltstudio_data")
 else:
     DATA_DIR = BASE_DIR / "data"
 
 try:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 except Exception:
-    DATA_DIR = Path("/tmp/alphaflow_data")
+    DATA_DIR = Path("/tmp/ltstudio_data")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 STORE_PATH = DATA_DIR / "keys_store.json"

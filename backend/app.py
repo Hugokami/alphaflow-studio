@@ -24,11 +24,16 @@ from .pipeline import (
     write_srt_file,
     render_final_video,
     push_to_telegram_storage,
+    generate_thumbnail_slices,
+    generate_viral_social_package,
+    detect_hardsubs_in_video,
+    stitch_intro_outro,
 )
 
 app = FastAPI(
-    title="AlphaFlow AI Studio — Zero-Cost Video Recap & Dubbing Engine",
-    version="2.0.0",
+    title="LTstudio AI — Professional Video Recap & Dubbing Engine",
+    description="Autonomous Movie & Anime Dubbing, High-Retention Voiceovers, Subtitles & Viral Packaging",
+    version="2.5.0",
 )
 
 app.add_middleware(
@@ -64,7 +69,7 @@ def _save_jobs() -> None:
 async def serve_studio_ui() -> HTMLResponse:
     index_file = FRONTEND_DIR / "index.html"
     if not index_file.exists():
-        return HTMLResponse("<h1>AlphaFlow UI initializing...</h1>")
+        return HTMLResponse("<h1>LTstudio UI initializing...</h1>")
     return HTMLResponse(index_file.read_text(encoding="utf-8"))
 
 
@@ -348,7 +353,7 @@ async def _run_job_pipeline(job_id: str, params: Dict[str, Any]) -> None:
             clauses = [c.strip() for c in full_narration.replace("။", "။\n").splitlines() if c.strip()]
             slot = max(2.0, duration_sec / max(1, len(clauses)))
             script_result = {
-                "viral_title": media_info.get("title", "AlphaFlow Recap")[:25],
+                "viral_title": media_info.get("title", "LTstudio Recap")[:25],
                 "hook_line": clauses[0] if clauses else "",
                 "full_narration": full_narration,
                 "captions": [
@@ -412,7 +417,7 @@ async def _run_job_pipeline(job_id: str, params: Dict[str, Any]) -> None:
         if params.get("push_telegram", True):
             _update(3, 95, "Uploading rendered MP4 to Telegram Bot cloud storage (@hyugoustoragebot)...")
             caption = (
-                f"🎬 {script_result.get('viral_title', 'AlphaFlow Render')}\n"
+                f"🎬 {script_result.get('viral_title', 'LTstudio Render')}\n"
                 f"🎙 Voice: {params.get('voice')} ({tts_model_used})\n"
                 f"⏱ Duration: {duration_sec:.1f}s"
             )
@@ -546,7 +551,7 @@ async def step_transcribe_audio(request: Request) -> Dict[str, Any]:
                     info = download_source_video(url, job_dir)
                     video_path = info.get("video_path") or (job_dir / "source.mp4")
                 else:
-                    transcript_data = {"text": "AlphaFlow Video Summary", "segments": [{"start": 0.0, "end": 10.0, "text": "Video"}], "language": "en"}
+                    transcript_data = {"text": "LTstudio Video Summary", "segments": [{"start": 0.0, "end": 10.0, "text": "Video"}], "language": "en"}
                     video_path = None
 
         if video_path and video_path.exists():
@@ -556,7 +561,7 @@ async def step_transcribe_audio(request: Request) -> Dict[str, Any]:
                 job_dir,
             )
         else:
-            transcript_data = {"text": "AlphaFlow Video Summary", "segments": [{"start": 0.0, "end": 10.0, "text": "Video"}], "language": "en"}
+            transcript_data = {"text": "LTstudio Video Summary", "segments": [{"start": 0.0, "end": 10.0, "text": "Video"}], "language": "en"}
 
     JOBS[job_id]["step"] = 2
     JOBS[job_id]["progress"] = 50
@@ -589,7 +594,7 @@ async def step_generate_script(request: Request) -> Dict[str, Any]:
         clauses = [c.strip() for c in full_narration.replace("။", "။\n").splitlines() if c.strip()]
         slot = max(2.0, duration_sec / max(1, len(clauses)))
         script_result = {
-            "viral_title": params.get("title", "AlphaFlow Recap")[:25],
+            "viral_title": params.get("title", "LTstudio Recap")[:25],
             "hook_line": clauses[0] if clauses else "",
             "full_narration": full_narration,
             "captions": [
@@ -638,7 +643,7 @@ async def step_synthesize_tts(request: Request) -> Dict[str, Any]:
     script = params.get("script") or JOBS[job_id].get("script") or {}
     text = script.get("full_narration") or params.get("text", "")
     if not text.strip():
-        text = "AlphaFlow video recap and summary."
+        text = "LTstudio video recap and summary."
 
     duration_sec = float(params.get("duration_sec") or params.get("duration") or JOBS[job_id].get("duration") or 0.0)
 
@@ -751,9 +756,9 @@ async def step_render_video(request: Request) -> Dict[str, Any]:
         if render_options.get("push_telegram", True):
             try:
                 duration_sec = float(params.get("duration") or JOBS[job_id].get("duration") or 0.0)
-                tts_model = JOBS[job_id].get("tts_model_used") or params.get("model_used") or "AlphaFlow TTS"
+                tts_model = JOBS[job_id].get("tts_model_used") or params.get("model_used") or "LTstudio TTS"
                 caption = (
-                    f"🎬 {script.get('viral_title', 'AlphaFlow Render')}\n"
+                    f"🎬 {script.get('viral_title', 'LTstudio Render')}\n"
                     f"🎙 Voice: {render_options.get('voice')} ({tts_model})\n"
                     f"⏱ Duration: {duration_sec:.1f}s"
                 )
@@ -823,7 +828,7 @@ async def start_video_processing(request: Request) -> Dict[str, Any]:
         "status": "processing",
         "step": 0,
         "progress": 2,
-        "log": "Queued in AlphaFlow Engine...",
+        "log": "Queued in LTstudio Engine...",
         "created_at": int(time.time()),
         "params": params,
     }
@@ -851,3 +856,107 @@ async def download_job_srt(job_id: str) -> FileResponse:
 async def list_all_jobs() -> Dict[str, Any]:
     ordered = sorted(JOBS.values(), key=lambda x: x.get("created_at", 0), reverse=True)
     return {"jobs": ordered[:30]}
+
+@app.get("/api/video/thumbnails/{job_id}")
+async def get_video_thumbnails(job_id: str) -> Dict[str, Any]:
+    job_dir = JOBS_DIR / job_id
+    if not job_dir.exists():
+        raise HTTPException(status_code=404, detail="Job directory not found")
+
+    vids = [
+        job_dir / "final_output.mp4",
+        *(p for p in job_dir.glob("source.*") if p.suffix.lower() not in (".json", ".part", ".mp3", ".wav", ".ytdl"))
+    ]
+    target_vid = next((v for v in vids if v.exists()), None)
+    if not target_vid:
+        raise HTTPException(status_code=404, detail="No video file available for thumbnail generation")
+
+    duration = float(JOBS.get(job_id, {}).get("duration") or 60.0)
+    thumbs = await asyncio.to_thread(generate_thumbnail_slices, target_vid, job_dir / "thumbnails", duration)
+    return {
+        "success": True,
+        "job_id": job_id,
+        "thumbnails": [
+            {
+                "index": t["index"],
+                "url": f"/api/video/thumbnail/{job_id}/{t['index']}",
+                "timestamp": t["timestamp"],
+                "size": t["size"]
+            }
+            for t in thumbs
+        ]
+    }
+
+
+@app.get("/api/video/thumbnail/{job_id}/{idx}")
+async def serve_thumbnail(job_id: str, idx: int) -> FileResponse:
+    thumb_path = JOBS_DIR / job_id / "thumbnails" / f"thumb_{idx}.jpg"
+    if not thumb_path.exists():
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
+    return FileResponse(str(thumb_path), media_type="image/jpeg", filename=f"thumb_{job_id}_{idx}.jpg")
+
+
+@app.get("/api/video/social-package/{job_id}")
+async def get_social_package(job_id: str) -> Dict[str, Any]:
+    job = JOBS.get(job_id, {})
+    script = job.get("script") or {}
+    duration = float(job.get("duration") or 60.0)
+    title = job.get("params", {}).get("title") or "Video Recap"
+    language = job.get("params", {}).get("target_language") or "Burmese"
+
+    package = await asyncio.to_thread(generate_viral_social_package, script, duration, title, language)
+    return {"success": True, "job_id": job_id, "package": package}
+
+
+@app.post("/api/video/detect-hardsubs")
+async def detect_hardsubs_endpoint(request: Request) -> Dict[str, Any]:
+    params = await request.json()
+    job_id = params.get("job_id")
+    video_path_str = params.get("video_file_path")
+
+    target_vid: Optional[Path] = None
+    if video_path_str and Path(video_path_str).exists():
+        target_vid = Path(video_path_str)
+    elif job_id and (JOBS_DIR / job_id).exists():
+        job_dir = JOBS_DIR / job_id
+        candidates = [p for p in job_dir.glob("source.*") if p.suffix.lower() not in (".json", ".part", ".mp3", ".wav", ".ytdl")]
+        if candidates:
+            target_vid = candidates[0]
+
+    if not target_vid or not target_vid.exists():
+        return {
+            "success": True,
+            "detection": {
+                "has_subtitles": True,
+                "box": {"x": 10, "y": 82, "w": 80, "h": 12},
+                "source": "default_fallback"
+            }
+        }
+
+    work_dir = target_vid.parent
+    result = await asyncio.to_thread(detect_hardsubs_in_video, target_vid, work_dir)
+    return {"success": True, "detection": result}
+
+
+@app.post("/api/video/upload-channel-asset")
+async def upload_channel_asset(
+    file: UploadFile = File(...),
+    asset_type: str = Form("intro")
+) -> Dict[str, Any]:
+    upload_id = f"asset_{asset_type}_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+    asset_dir = DATA_DIR / "channel_assets"
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename or "asset.mp4").suffix or ".mp4"
+    dest_path = asset_dir / f"{upload_id}{ext}"
+
+    with dest_path.open("wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    return {
+        "success": True,
+        "asset_type": asset_type,
+        "asset_path": str(dest_path),
+        "filename": file.filename,
+        "size": dest_path.stat().st_size
+    }
+

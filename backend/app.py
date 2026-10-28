@@ -49,20 +49,27 @@ FRONTEND_DIR.mkdir(parents=True, exist_ok=True)
 SAMPLES_CACHE_DIR = DATA_DIR / "voice_samples"
 SAMPLES_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-JOBS_STORE_FILE = DATA_DIR / "jobs_registry.json"
-JOBS: Dict[str, Dict[str, Any]] = {}
-if JOBS_STORE_FILE.exists():
-    try:
-        JOBS.update(json.loads(JOBS_STORE_FILE.read_text(encoding="utf-8")))
-    except Exception:
-        pass
+from backend.database import (
+    db_jobs as JOBS,
+    get_job,
+    save_job,
+    update_job,
+    list_jobs,
+    delete_job,
+    init_db,
+)
+from backend.script_harvester import (
+    harvest_trending_script,
+    synthesize_recap_script,
+)
+
+# Initialize SQLite WAL database queue
+init_db()
 
 
 def _save_jobs() -> None:
-    try:
-        JOBS_STORE_FILE.write_text(json.dumps(JOBS, indent=2, ensure_ascii=False), encoding="utf-8")
-    except Exception:
-        pass
+    """Legacy no-op: All job state updates are atomically persisted to SQLite WAL in real-time."""
+    pass
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -308,7 +315,7 @@ async def _run_job_pipeline(job_id: str, params: Dict[str, Any]) -> None:
         job["progress"] = progress
         job["log"] = log_msg
         job.update(extra)
-        _save_jobs()
+        update_job(job_id, step=step, progress=progress, log=log_msg, **extra)
 
     try:
         # STEP 0: Preparing Video (Download URL or Probe Uploaded File)
@@ -892,8 +899,8 @@ async def download_job_srt(job_id: str) -> FileResponse:
 
 @app.get("/api/jobs")
 async def list_all_jobs() -> Dict[str, Any]:
-    ordered = sorted(JOBS.values(), key=lambda x: x.get("created_at", 0), reverse=True)
-    return {"jobs": ordered[:30]}
+    ordered = list_jobs(limit=50)
+    return {"jobs": ordered}
 
 @app.get("/api/video/thumbnails/{job_id}")
 async def get_video_thumbnails(job_id: str) -> Dict[str, Any]:
@@ -998,3 +1005,60 @@ async def upload_channel_asset(
         "size": dest_path.stat().st_size
     }
 
+
+# ============================================================================
+# 8. AGENT-REACH ZERO-COST SCRIPT & SYNOPSIS HARVESTING ENDPOINTS
+# ============================================================================
+
+@app.post("/api/viral/harvest")
+async def api_harvest_script(request: Request) -> Dict[str, Any]:
+    """
+    Harvests trending storylines, commentary, and plot beats from YouTube,
+    Wikipedia, and social sources with zero official API fees, and optionally synthesizes
+    a syllable-timed Burmese/multilingual recap narration script.
+    """
+    payload = await request.json()
+    query = str(payload.get("query") or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Query parameter is required")
+
+    platforms = payload.get("platforms")
+    limit = int(payload.get("limit") or 5)
+
+    harvest_res = await asyncio.to_thread(harvest_trending_script, query, platforms, limit)
+
+    script_res = None
+    if payload.get("generate_script", True):
+        duration_sec = float(payload.get("duration_sec") or payload.get("duration") or 60.0)
+        target_lang = payload.get("target_language") or "Burmese (Myanmar Language)"
+        voice = payload.get("voice") or "Charon"
+        script_style = payload.get("script_style") or "Engaging Story"
+        voice_tone = payload.get("voice_tone") or "Energetic"
+        script_res = await asyncio.to_thread(
+            synthesize_recap_script,
+            harvest_res,
+            duration_sec=duration_sec,
+            target_language=target_lang,
+            voice=voice,
+            script_style=script_style,
+            voice_tone=voice_tone,
+        )
+
+    return {
+        "success": True,
+        "query": query,
+        "harvester": harvest_res.get("harvester"),
+        "sources_count": harvest_res.get("sources_count", 0),
+        "sources": harvest_res.get("sources", []),
+        "combined_outline": harvest_res.get("combined_outline", ""),
+        "script": script_res,
+    }
+
+
+@app.get("/api/viral/harvest-preview")
+async def api_harvest_preview(query: str = "") -> Dict[str, Any]:
+    """Fast GET preview endpoint for zero-cost outline harvesting."""
+    if not query.strip():
+        raise HTTPException(status_code=400, detail="Query parameter is required")
+    harvest_res = await asyncio.to_thread(harvest_trending_script, query.strip())
+    return harvest_res

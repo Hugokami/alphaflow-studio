@@ -325,6 +325,63 @@ def delete_job(job_id: str) -> bool:
         conn.close()
 
 
+def queue_job(job_id: str, params: Dict[str, Any], mode: str = "recap") -> None:
+    """Queues a new job into the SQLite WAL database."""
+    now = time.time()
+    save_job(job_id, {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "step": 0,
+        "mode": mode,
+        "params": params,
+        "created_at": now,
+        "updated_at": now,
+    })
+
+
+def update_job_progress(job_id: str, progress: int, step: Any, result: Optional[Dict[str, Any]] = None) -> None:
+    """Updates job progress and status in SQLite WAL."""
+    status = "completed" if progress >= 100 else "processing"
+    kwargs: Dict[str, Any] = {
+        "progress": progress,
+        "step": int(step) if str(step).isdigit() else step,
+        "status": status,
+    }
+    if result:
+        kwargs["result"] = result
+        kwargs["data"] = result
+    update_job(job_id, **kwargs)
+
+
+class _JobDictProxy(dict):
+    """
+    Auto-persisting dictionary proxy.
+    Any mutation (e.g. job["step"] = 2 or job.update(...)) is immediately written back to the SQLite WAL database.
+    """
+    def __init__(self, job_id: str, initial_data: Dict[str, Any]):
+        super().__init__(initial_data)
+        self._job_id = job_id
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        super().__setitem__(key, value)
+        update_job(self._job_id, **{key: value})
+
+    def update(self, *args: Any, **kwargs: Any) -> None:
+        super().update(*args, **kwargs)
+        merged: Dict[str, Any] = {}
+        if args and isinstance(args[0], dict):
+            merged.update(args[0])
+        merged.update(kwargs)
+        if merged:
+            update_job(self._job_id, **merged)
+
+    def setdefault(self, key: str, default: Any = None) -> Any:
+        if key not in self:
+            self[key] = default
+        return self[key]
+
+
 class JobRegistryProxy(collections.abc.MutableMapping):
     """
     Drop-in mapping proxy for app.py's legacy `JOBS` dictionary.
@@ -332,11 +389,15 @@ class JobRegistryProxy(collections.abc.MutableMapping):
     while delegating all operations directly to the SQLite WAL queue.
     """
 
-    def __getitem__(self, key: str) -> Dict[str, Any]:
+    def __getitem__(self, key: str) -> _JobDictProxy:
         job = get_job(key)
         if job is None:
             raise KeyError(key)
-        return job
+        return _JobDictProxy(key, job)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        job = get_job(key)
+        return _JobDictProxy(key, job) if job is not None else default
 
     def __setitem__(self, key: str, value: Dict[str, Any]) -> None:
         save_job(key, value)
@@ -362,9 +423,7 @@ class JobRegistryProxy(collections.abc.MutableMapping):
             return False
         return get_job(key) is not None
 
-    def get(self, key: str, default: Any = None) -> Any:
-        job = get_job(key)
-        return job if job is not None else default
+
 
     def values(self) -> List[Dict[str, Any]]:
         return list_jobs(limit=100)

@@ -15,6 +15,8 @@ from typing import Dict, Any, List, Optional
 from .key_pool import key_pool, DATA_DIR
 from .tts_engine import synthesize_voice
 
+ALPHAFLOW_DIR = Path(__file__).resolve().parent.parent
+
 JOBS_DIR = DATA_DIR / "jobs"
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -383,6 +385,27 @@ def download_source_video(url: str, dest_dir: Path) -> Dict[str, Any]:
     out_tmpl = str(dest_dir / "source.%(ext)s")
     ffmpeg_bin = get_ffmpeg_exe()
 
+    # 0. Direct Cloud Storage Stream Extractor (LinkSwift: 123pan, Quark, Baidu, GDrive, OneDrive)
+    from backend.cloud_extractor import CloudLinkExtractor
+    if CloudLinkExtractor.is_cloud_url(url):
+        cloud_info = CloudLinkExtractor.resolve_direct_stream(url)
+        if cloud_info and cloud_info.get("direct_url"):
+            direct_url = cloud_info["direct_url"]
+            print(f"[*] [CloudLinkExtractor] Direct stream resolved for {cloud_info.get('platform')}: {direct_url[:80]}...")
+            dest_file = dest_dir / "source.mp4"
+            req = urllib.request.Request(direct_url, headers=cloud_info.get("headers", {}))
+            with urllib.request.urlopen(req, timeout=45) as resp, open(dest_file, "wb") as f:
+                while chunk := resp.read(1024 * 1024):
+                    f.write(chunk)
+            meta = probe_media_info(dest_file)
+            return {
+                "video_path": dest_file,
+                "title": cloud_info.get("title", "Cloud Video"),
+                "duration": meta.get("duration", 0.0),
+                "width": meta.get("width", 1280),
+                "height": meta.get("height", 720),
+            }
+
     # 1. Expand short links (vt.tiktok.com, vm.tiktok.com, youtu.be)
     canonical_url = resolve_canonical_url(url)
     vid_id = extract_youtube_id(canonical_url)
@@ -660,12 +683,16 @@ def generate_recap_or_dub_script(
                 f"narrate the entire visual and plot progression from 0.0s to {video_duration_sec:.1f}s without gaps or sudden stops."
             )
             target_syllables = max(45, int(video_duration_sec * 3.4))
-        elif recap_length == "condensed_hook":
-            mode_instruction = "Write a fast-paced 60s viral hook teaser recap"
-            target_syllables = max(35, min(200, int(video_duration_sec * 3.0)))
         else:
-            mode_instruction = "Write a gripping, viral movie/anime recap narration evenly pacing key turning points"
-            target_syllables = max(35, int(video_duration_sec * 3.3))
+            mode_instruction = (
+                "Write a complete, gripping, high-retention movie story recap that is GUARANTEED to be OVER 1 MINUTE LONG (target 75 to 95 seconds spoken runtime, minimum 260 syllables). "
+                "CRITICAL STORY INVARIANT: You MUST cover and narrate ALL key parts of the original video from start to finish: "
+                "1. Opening Premise: Introduce the setting, protagonist, and initial world context. "
+                "2. Inciting Conflict: What goes wrong or what threat/mystery appears. "
+                "3. Key Turning Points: The struggles, confrontations, and rising tension. "
+                "4. Climax & Complete Ending: Reveal how the climax unfolds and the final resolution (NEVER stop at a cliffhanger or teaser; explain what happens in the end)."
+            )
+            target_syllables = max(260, min(420, int(video_duration_sec * 1.5)))
     elif processing_mode == "dubbing":
         mode_instruction = "Translate and adapt the dialogue for natural lip-synced dubbing"
     else:
@@ -679,7 +706,9 @@ Video Duration: {video_duration_sec:.1f} seconds (Target approximately {target_s
 CRITICAL RULES:
 1. Output 100% pure Myanmar Unicode (never Zawgyi) when target language is Burmese.
 2. Spell out numbers in spoken words and use natural conversational endings (ပါတယ်၊ ခဲ့တယ်၊ ပေါ့နော်) instead of stiff literary bookish Burmese (သည်၊ ၏).
-3. Return ONLY valid JSON with this exact schema:
+3. MINIMUM RUNTIME (> 1 MINUTE): Narration MUST be at least 250-320 syllables (minimum 10-16 detailed conversational sentences) so that spoken audio runtime comfortably exceeds 60 seconds.
+4. COMPLETE STORY BEATS: Include ALL key parts (Beginning -> Conflict -> Turning Points -> Climax -> Ending Resolution). Never stop early or leave a cliffhanger.
+5. Return ONLY valid JSON with this exact schema:
 {{
   "viral_title": "Snappy <25 char title for thumbnail",
   "hook_line": "1-sentence high-retention opening hook",
@@ -729,7 +758,7 @@ CRITICAL RULES:
 
     def _call_gemini_llm(api_key: str) -> Dict[str, Any]:
         last_err = None
-        for gem_model in ("gemini-3.5-flash", "gemini-3.8-flash", "gemini-flash-latest"):
+        for gem_model in ("gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.8-flash", "gemini-flash-latest"):
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{gem_model}:generateContent?key={api_key}"
                 payload = {
@@ -746,7 +775,7 @@ CRITICAL RULES:
                     headers={"Content-Type": "application/json"},
                     method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=30) as resp:
+                with urllib.request.urlopen(req, timeout=90) as resp:
                     body = json.loads(resp.read().decode("utf-8"))
                 txt = body["candidates"][0]["content"]["parts"][0]["text"].strip()
                 if txt.startswith("```"):
@@ -964,7 +993,7 @@ Return ONLY valid JSON matching this schema:
             headers={"Content-Type": "application/json"},
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=90) as resp:
             body = json.loads(resp.read().decode("utf-8"))
         text = body.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
         m = re.search(r"\{.*\}", text, re.DOTALL)
@@ -1063,7 +1092,7 @@ Return ONLY JSON:
                 headers={"Content-Type": "application/json"},
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=90) as resp:
                 body = json.loads(resp.read().decode("utf-8"))
             text = body.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
             m = re.search(r"\{.*\}", text, re.DOTALL)
@@ -1120,14 +1149,27 @@ def render_final_video(
         v_filters.append("crop=w=in_w*0.88:h=in_h*0.88:x=(in_w-out_w)/2:y=(in_h-out_h)/2")
 
     # 2. Horizontal Flip (flip_video)
-    if options.get("flip_video"):
+    # 2. Horizontal Flip (flip_video) - Mirrored by default
+    if options.get("flip_video", True):
         v_filters.append("hflip")
 
     # 3. Auto Color Enhancement (auto_color)
     if options.get("auto_color"):
         v_filters.append("eq=contrast=1.05:brightness=0.02:saturation=1.08")
 
-    # 3b. Hardsub Blur Masks / Delogo Filters
+    # 3b. Watermark & Branding Removal
+    if options.get("remove_watermark", True):
+        cw = max(40, int(w * 0.12))
+        ch = max(24, int(h * 0.08))
+        if options.get("flip_video", True):
+            cx = max(2, int(w * 0.03))
+            cy = max(2, int(h * 0.04))
+        else:
+            cx = max(2, min(w - cw - 2, int(w * 0.85)))
+            cy = max(2, int(h * 0.04))
+        v_filters.append(f"delogo=x={cx}:y={cy}:w={cw}:h={ch}")
+
+    # 3c. Custom Hardsub Blur Masks / Delogo Filters
     if options.get("blur_enabled"):
         blur_boxes = options.get("blur_boxes") or []
         for b in blur_boxes:
@@ -1171,27 +1213,28 @@ def render_final_video(
     else:
         v_filters.append("scale=trunc(iw/2)*2:trunc(ih/2)*2")
 
-    # 5. Burned-in Subtitles (Hardsub if supported by local FFmpeg build)
+    # 5. Burned-in Subtitles with HarfBuzz Complex Text Shaping (mym2)
     sub_enabled = options.get("subtitle_enabled") in (True, "true", "True", 1, "1") or options.get("processing_mode") == "assemble"
     sub_type = str(options.get("subtitle_type", "encode")).lower()
     if sub_enabled and srt_path and srt_path.exists() and sub_type != "file":
         escaped_srt = str(srt_path.resolve()).replace("\\", "/").replace(":", "\\:")
         canvas_h = 1920 if ratio == "9:16" else (1440 if ratio == "3:4" else (1080 if ratio == "1:1" else h))
-        raw_size = int(options.get("subtitle_font_size", 44))
-        if ratio == "9:16":
-            font_size = max(26, min(65, int(raw_size * 0.9)))
-        else:
-            font_size = max(20, min(50, int(raw_size * 0.75)))
 
-        margin_v = 40
+        # Responsive font sizing: default 24 base size scaled relative to 720p base
+        raw_size = int(options.get("subtitle_font_size", 24))
+        scale_factor = canvas_h / 720.0
+        font_size = max(13, min(55, int(raw_size * scale_factor)))
+        outline_size = max(1.0, min(2.5, round(font_size * 0.08, 1)))
+
+        margin_v = max(10, int(canvas_h * 0.06))
         if "subtitle_y" in options:
             try:
                 sub_y = float(options["subtitle_y"])
                 if sub_y <= 1.0:
                     sub_y *= 100.0
-                margin_v = max(15, min(canvas_h - 100, int(((100.0 - sub_y) / 100.0) * canvas_h)))
+                margin_v = max(8, min(canvas_h - 30, int(((100.0 - sub_y) / 100.0) * canvas_h)))
             except Exception:
-                margin_v = 40
+                pass
 
         # Subtitle Color & Border Style Customization
         sub_color_val = str(options.get("subtitle_color", "white")).lower()
@@ -1206,14 +1249,22 @@ def render_final_video(
 
         sub_style_val = str(options.get("subtitle_style", "outline")).lower()
         if sub_style_val == "box":
-            style_params = "BorderStyle=3,Outline=2,Shadow=1,BackColour=&H80000000"
+            style_params = f"BorderStyle=3,Outline={outline_size},Shadow=1,BackColour=&H80000000"
         else:
-            style_params = "BorderStyle=1,Outline=3,Shadow=0"
+            style_params = f"BorderStyle=1,Outline={outline_size},Shadow=0"
 
-        font_name = options.get("subtitle_font") or "Myanmar Text"
-        v_filters.append(
-            f"subtitles='{escaped_srt}':force_style='FontName={font_name},FontSize={font_size},PrimaryColour={primary_colour},OutlineColour=&H00000000,{style_params},Alignment=2,MarginV={margin_v}'"
-        )
+        # Pass fontsdir so libass loads Noto Sans Myanmar / Pyidaungsu via FreeType/HarfBuzz for mym2 complex text shaping
+        fonts_dir = ALPHAFLOW_DIR / "assets" / "fonts"
+        font_name = options.get("subtitle_font") or "Noto Sans Myanmar"
+        if fonts_dir.exists():
+            escaped_fonts_dir = str(fonts_dir.resolve()).replace("\\", "/").replace(":", "\\:")
+            v_filters.append(
+                f"subtitles='{escaped_srt}':fontsdir='{escaped_fonts_dir}':force_style='FontName={font_name},FontSize={font_size},PrimaryColour={primary_colour},OutlineColour=&H00000000,{style_params},Alignment=2,MarginV={margin_v}'"
+            )
+        else:
+            v_filters.append(
+                f"subtitles='{escaped_srt}':force_style='FontName={font_name},FontSize={font_size},PrimaryColour={primary_colour},OutlineColour=&H00000000,{style_params},Alignment=2,MarginV={margin_v}'"
+            )
 
     vf_chain = ",".join(v_filters) if v_filters else "null"
 
@@ -1255,9 +1306,9 @@ def render_final_video(
                     str(out_video),
                 ]
         else:
-            # Short hook or custom cut mode
+            # Complete recap cut mode (guaranteed > 1 minute via apad whole_dur=65)
             if bg_vol > 0:
-                fc = f"[0:v]{vf_chain}[vout];[0:a]volume={bg_vol}[bg];[1:a]volume={voice_vol}[voc];[voc][bg]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+                fc = f"[0:v]{vf_chain}[vout];[0:a]volume={bg_vol}[bg];[1:a]apad=whole_dur=65,volume={voice_vol}[voc];[voc][bg]amix=inputs=2:duration=first:dropout_transition=2[aout]"
                 cmd = [
                     ffmpeg_bin, "-y",
                     "-stream_loop", "-1", "-i", str(source_video),

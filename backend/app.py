@@ -57,7 +57,10 @@ from backend.database import (
     list_jobs,
     delete_job,
     init_db,
+    queue_job,
+    update_job_progress,
 )
+from backend.cloud_extractor import CloudLinkExtractor
 from backend.script_harvester import (
     harvest_trending_script,
     synthesize_recap_script,
@@ -263,6 +266,25 @@ async def upload_source_video_endpoint(file: UploadFile = File(...)) -> Dict[str
         "smart_routed_tts_model": routed_models[0],
         "preview_url": f"/api/video/local-preview/{upload_id}",
     }
+
+
+@app.post("/api/cloud/extract")
+async def extract_cloud_link_endpoint(request: Request) -> Dict[str, Any]:
+    """Direct Cloud Storage Stream Resolver (123pan, Quark, Baidu, Google Drive, OneDrive)."""
+    data = await request.json()
+    url = data.get("url", "").strip()
+    pwd = data.get("pwd")
+    if not url:
+        raise HTTPException(status_code=400, detail="Missing cloud share URL")
+
+    stream_info = CloudLinkExtractor.resolve_direct_stream(url, pwd)
+    if not stream_info:
+        return {
+            "success": False,
+            "error": "Unable to resolve direct stream for this cloud URL or unsupported provider.",
+            "is_cloud": CloudLinkExtractor.is_cloud_url(url),
+        }
+    return {"success": True, **stream_info}
 
 
 @app.get("/api/video/video-info")
@@ -665,7 +687,7 @@ async def step_prepare_video(request: Request) -> Any:
             requested_model=params.get("gemini_tts_model"),
         )
 
-        JOBS[job_id] = {
+        save_job(job_id, {
             "job_id": job_id,
             "status": "processing",
             "step": 1,
@@ -676,8 +698,7 @@ async def step_prepare_video(request: Request) -> Any:
             "media_info": media_info,
             "created_at": int(time.time()),
             "params": params,
-        }
-        _save_jobs()
+        })
 
         return {
             "success": True,
@@ -737,11 +758,13 @@ async def step_transcribe_audio(request: Request) -> Dict[str, Any]:
         else:
             transcript_data = {"text": "LTstudio Video Summary", "segments": [{"start": 0.0, "end": 10.0, "text": "Video"}], "language": "en"}
 
-    JOBS[job_id]["step"] = 2
-    JOBS[job_id]["progress"] = 50
-    JOBS[job_id]["log"] = f"Transcribed ({len(transcript_data.get('segments', []))} segments, language: {transcript_data.get('language')})"
-    JOBS[job_id]["transcript_data"] = transcript_data
-    _save_jobs()
+    update_job(
+        job_id,
+        step=2,
+        progress=50,
+        log=f"Transcribed ({len(transcript_data.get('segments', []))} segments, language: {transcript_data.get('language')})",
+        transcript_data=transcript_data,
+    )
 
     return {
         "success": True,
@@ -790,11 +813,13 @@ async def step_generate_script(request: Request) -> Dict[str, Any]:
     srt_path = job_dir / "captions.srt"
     await asyncio.to_thread(write_srt_file, script_result.get("captions", []), srt_path)
 
-    JOBS[job_id]["step"] = 3
-    JOBS[job_id]["progress"] = 75
-    JOBS[job_id]["log"] = f"Script generated ({len(script_result.get('captions', []))} subtitle lines)"
-    JOBS[job_id]["script"] = script_result
-    _save_jobs()
+    update_job(
+        job_id,
+        step=3,
+        progress=75,
+        log=f"Script generated ({len(script_result.get('captions', []))} subtitle lines)",
+        script=script_result,
+    )
 
     return {
         "success": True,
@@ -843,12 +868,14 @@ async def step_synthesize_tts(request: Request) -> Dict[str, Any]:
         except Exception as b64_err:
             print("Base64 encode error:", b64_err)
 
-    JOBS[job_id]["step"] = 4
-    JOBS[job_id]["progress"] = 90
-    JOBS[job_id]["log"] = f"Voice synthesized via {tts_res['model_used']}"
-    JOBS[job_id]["voice_audio_path"] = str(tts_res["audio_path"])
-    JOBS[job_id]["tts_model_used"] = tts_res["model_used"]
-    _save_jobs()
+    update_job(
+        job_id,
+        step=4,
+        progress=90,
+        log=f"Voice synthesized via {tts_res['model_used']}",
+        voice_audio_path=str(tts_res["audio_path"]),
+        tts_model_used=tts_res["model_used"],
+    )
 
     return {
         "success": True,
@@ -950,14 +977,16 @@ async def step_render_video(request: Request) -> Dict[str, Any]:
                 print("Telegram push notice:", tg_err)
                 tg_result = {"pushed": False, "reason": str(tg_err)[:200]}
 
-        JOBS[job_id]["status"] = "completed"
-        JOBS[job_id]["step"] = 5
-        JOBS[job_id]["progress"] = 100
-        JOBS[job_id]["log"] = "Completed! Video rendered & archived."
-        JOBS[job_id]["download_url"] = f"/api/video/local-preview/{job_id}"
-        JOBS[job_id]["srt_url"] = f"/api/video/subtitle/{job_id}/download"
-        JOBS[job_id]["telegram"] = tg_result
-        _save_jobs()
+        update_job(
+            job_id,
+            status="completed",
+            step=5,
+            progress=100,
+            log="Completed! Video rendered & archived.",
+            download_url=f"/api/video/local-preview/{job_id}",
+            srt_url=f"/api/video/subtitle/{job_id}/download",
+            telegram=tg_result,
+        )
 
         return {
             "success": True,
@@ -1006,7 +1035,7 @@ async def start_video_processing(request: Request) -> Dict[str, Any]:
                 params[bool_k] = str(params[bool_k]).lower() in ("true", "1", "on", "yes")
 
     job_id = f"job_{int(time.time())}_{uuid.uuid4().hex[:6]}"
-    JOBS[job_id] = {
+    save_job(job_id, {
         "job_id": job_id,
         "status": "processing",
         "step": 0,
@@ -1014,8 +1043,7 @@ async def start_video_processing(request: Request) -> Dict[str, Any]:
         "log": "Queued in LTstudio Engine...",
         "created_at": int(time.time()),
         "params": params,
-    }
-    _save_jobs()
+    })
     asyncio.create_task(_run_job_pipeline(job_id, params))
     return {"success": True, "job_id": job_id, "job": JOBS[job_id]}
 

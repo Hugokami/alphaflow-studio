@@ -50,7 +50,7 @@ class MultiKeyPoolManager:
             "groq_keys": [],
             "tts_routing": {
                 "mode": "smart_duration",  # "smart_duration" | "fixed"
-                "default_model": self.env_vars.get("DEFAULT_GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts"),
+                "default_model": self.env_vars.get("DEFAULT_GEMINI_TTS_MODEL", "gemini-3.8-flash-tts"),
                 "short_video_model": self.env_vars.get("SHORT_VIDEO_TTS_MODEL", "gemini-3.8-flash-tts"),
                 "long_video_model": self.env_vars.get("LONG_VIDEO_TTS_MODEL", "gemini-3.8-flash-lite-tts"),
                 "duration_threshold_sec": int(self.env_vars.get("DURATION_THRESHOLD_SEC", "180")),
@@ -216,7 +216,7 @@ class MultiKeyPoolManager:
         """
         routing = self.state["tts_routing"]
         threshold = float(routing.get("duration_threshold_sec", 180))
-        default_model = routing.get("default_model", "gemini-2.5-flash-preview-tts")
+        default_model = routing.get("default_model", "gemini-3.8-flash-tts")
         short_model = routing.get("short_video_model", "gemini-3.8-flash-tts")
         long_model = routing.get("long_video_model", "gemini-3.8-flash-lite-tts")
 
